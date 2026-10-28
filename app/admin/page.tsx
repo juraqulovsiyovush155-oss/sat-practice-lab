@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import AdminCreateTest from "./create-test";
+import AdminManageStudents from "./manage-students";
 import AdminManageTests from "./manage-tests";
 
 export default async function AdminPage() {
@@ -21,6 +22,12 @@ export default async function AdminPage() {
     .select("id,title,kind,section,topic,published,created_at")
     .order("created_at", { ascending: false });
   const testList = tests ?? [];
+  const { data: studentRows, error: studentError } = await supabase
+    .from("profiles")
+    .select("id,full_name,email,approved,created_at")
+    .eq("role", "student")
+    .order("created_at", { ascending: false });
+  const students = studentRows ?? [];
 
   return (
     <>
@@ -34,8 +41,9 @@ export default async function AdminPage() {
       <main className="wrap">
         <div className="eyebrow">Boshqaruv</div>
         <h1>Testlar boshqaruvi</h1>
-        <p>Test yarating, savollarni kiriting va tayyor bo‘lgach o‘quvchilarga e’lon qiling.</p>
+        <p>O‘quvchi akkauntlarini tasdiqlang, test yarating, savollarni kiriting va tayyor bo‘lgach o‘quvchilarga e’lon qiling.</p>
 
+        {studentError ? <p className="error">O‘quvchilar ro‘yxati yuklanmadi. Supabase migratsiyasini tekshiring: {studentError.message}</p> : <AdminManageStudents initialStudents={students} />}
         <AdminCreateTest />
         <AdminManageTests tests={testList} />
 

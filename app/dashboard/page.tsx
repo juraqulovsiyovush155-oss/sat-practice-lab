@@ -8,8 +8,8 @@ export default async function DashboardPage() {
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
   if(!user) redirect("/login");
-  const {data:profile}=await supabase.from("profiles").select("full_name,role").eq("id",user.id).maybeSingle();
-  const isAdmin=profile?.role==="admin";
+  const {data:profile}=await supabase.from("profiles").select("full_name,role,approved").eq("id",user.id).maybeSingle();
+  const isAdmin=profile?.role==="admin"; if(!isAdmin&&profile?.approved!==true) redirect("/pending");
   const {data:tests}=await supabase.from("tests").select("id,title,kind,section,topic,duration_seconds").eq("published",true).order("created_at",{ascending:false});
   const {data:attempts}=await supabase.from("attempts").select("id,correct_count,question_count,estimated_score,submitted_at,test_id").eq("student_id",user.id).not("submitted_at","is",null).order("submitted_at",{ascending:false}).limit(10);
   return <><header className="topbar"><Link href="/" className="brand" style={{textDecoration:"none",color:"inherit"}}><div className="logo">S</div><span>Siyovush <span style={{color:"var(--green)"}}>SAT</span></span></Link><div className="row"><span className="tag">{isAdmin?"Admin":"Student"}</span><SignOutButton/></div></header><main className="wrap"><div className="eyebrow">Dashboard</div><h1>Salom, {profile?.full_name||user.user_metadata?.full_name||user.email}!</h1><p>Bugungi mashg‘ulotni tanlang.</p><div className="stats"><div className="stat"><small>Yakunlangan testlar</small><strong>{attempts?.length??0}</strong></div><div className="stat"><small>Oxirgi natija</small><strong>{attempts?.[0]?.estimated_score??"—"}</strong><p>Taxminiy SAT balli</p></div><div className="stat"><small>Akkaunt</small><strong style={{fontSize:18}}>{isAdmin?"Administrator":"O‘quvchi"}</strong><p>{user.email}</p></div></div>

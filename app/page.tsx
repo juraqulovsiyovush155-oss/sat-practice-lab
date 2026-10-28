@@ -95,7 +95,7 @@ export default async function Home() {
 
         <section className="practice-band">
           <div className="practice-band-mark">S</div>
-          <div><span className="section-kicker">SIYOVUSH PRACTICE</span><h2>O‘rganing. Mashq qiling. O‘sishni kuzating.</h2><p>Admin e’lon qilgan testlarni akkauntingizdan ishlashingiz mumkin.</p></div>
+          <div><span className="section-kicker">SIYOVUSH PRACTICE</span><h2>O‘rganing. Mashq qiling. O‘sishni kuzating.</h2><p>Admin tasdiqlagach, e’lon qilingan testlar dashboardda ko‘rinadi.</p></div>
           <Link className="site-light-cta" href={startHref}>{startLabel}<span aria-hidden="true">↗</span></Link>
         </section>
 
@@ -103,8 +103,8 @@ export default async function Home() {
           <div><span className="section-kicker">FAQ</span><h2>Ko‘p so‘raladigan savollar.</h2><p>Platforma va tayyorgarlik dasturlari haqida.</p></div>
           <FAQ items={[
             { q: "SAT va GRE uchun alohida dasturlar bormi?", a: "Ha. SAT va GRE sahifalarida har bir imtihon bo‘limlari, o‘quv yo‘nalishlari va tayyorgarlik usuli alohida berilgan." },
-            { q: "Platformada testni qayerdan boshlayman?", a: "Akkaunt yarating yoki tizimga kiring. Dashboardda admin e’lon qilgan mavjud testlar ko‘rinadi." },
-            { q: "Platformada testlar qayerdan ko‘rinadi?", a: "Akkauntga kirgach, admin e’lon qilgan mavjud testlar dashboardda ko‘rinadi." },
+            { q: "Platformada testni qayerdan boshlayman?", a: "Akkaunt yarating. Admin tasdiqlagach, dashboarddagi e’lon qilingan testlarni ishlay olasiz." },
+            { q: "Testlarga qachon kirish ochiladi?", a: "Akkauntga kirgach, admin e’lon qilgan mavjud testlar dashboardda ko‘rinadi." },
           ]} />
         </section>
 
