@@ -1,6 +1,6 @@
-# SAT Practice Lab — Supabase + Next.js starter
+# Siyovush SAT — Supabase + Next.js starter
 
-This is a backend-connected starter scaffold for SAT Practice Lab. It is not deployed yet and does not include live credentials.
+This is a backend-connected starter scaffold for Siyovush SAT. The application is published as a SAT practice platform. Runtime Supabase credentials are configured in the hosting dashboard.
 
 ## Stack
 - Next.js App Router + TypeScript

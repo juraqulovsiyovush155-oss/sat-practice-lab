@@ -12,7 +12,7 @@ export default async function Home() {
     configError = true;
   }
   return <>
-    <header className="topbar"><div className="brand"><div className="logo">S</div><span>SAT Practice <span style={{color:"var(--green)"}}>Lab</span></span></div><span className="tag">Student · Admin</span></header>
+    <header className="topbar"><div className="brand"><div className="logo">S</div><span>Siyovush <span style={{color:"var(--green)"}}>SAT</span></span></div><span className="tag">Student · Admin</span></header>
     <main className="wrap">
       <div className="eyebrow">SAT tayyorgarlik platformasi</div>
       <h1>Bilimingizni sinang.<br/>Natijangizni yaxshilang.</h1>
@@ -24,6 +24,6 @@ export default async function Home() {
         <article className="test-card"><span className="tag">01 · Practice</span><h3>Mavzuli testlar</h3><p>Algebra, Advanced Math, Data Analysis va boshqa yo‘nalishlar.</p></article>
         <article className="test-card"><span className="tag">02 · Mock</span><h3>Sinov imtihonlari</h3><p>Vaqt bilan ishlash va test natijalarini tahlil qilish.</p></article>
       </div>
-    </main><footer>SAT Practice Lab · Rasmiy College Board mahsuloti emas.</footer>
+    </main><footer>Siyovush SAT · Rasmiy College Board mahsuloti emas.</footer>
   </>;
 }
