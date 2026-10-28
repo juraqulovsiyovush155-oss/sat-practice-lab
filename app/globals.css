@@ -18,3 +18,13 @@
 :root{--green:#155d3b;--green2:#176b43;--mint:#e8f5ec;--ink:#171a24;--muted:#626b7c;--line:#d9deea;--bg:#f4faf5}.primary{background:#176b43}.secondary{background:#e8f5ec;color:#155d3b}.logo{background:#155d3b}.eyebrow{color:#176b43}.tag{background:#e8f5ec;color:#155d3b}.bb-cross-toggle.active{background:#171717;color:#fff}.bb-primary:disabled{opacity:.55;cursor:wait}
 .bb-prompt.text-highlight::selection{background:#ffe36a;color:#111}
 
+
+.admin-question-list{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:10px}
+.admin-question-list li{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;border:1px solid var(--line);border-radius:12px;padding:13px;background:#fbfdfb}
+.admin-question-copy{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.admin-question-copy strong{color:var(--green);flex:0 0 auto}
+.admin-question-copy span{white-space:pre-wrap;overflow-wrap:anywhere}
+.admin-question-actions{display:flex;gap:8px;flex:0 0 auto}
+.admin-question-actions .btn{padding:7px 10px;font-size:13px}
+.admin-danger{background:#fff0ef;color:#a52620;border:1px solid #f2c8c4}
+@media(max-width:700px){.admin-question-list li{display:block}.admin-question-actions{margin-top:12px}}
