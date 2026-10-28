@@ -210,3 +210,98 @@
 .student-access-row .btn{flex:0 0 auto}
 .student-approved-toggle{cursor:pointer;color:var(--green);font-weight:800}
 @media(max-width:620px){.student-access-row{align-items:flex-start;flex-direction:column}.student-access-row .btn{width:100%}}
+
+/* Supplied SAT/GRE hero art and restrained motion. */
+.home-hero-copy h1{animation:rise-in .7s both}
+.home-hero-copy>p,.home-hero-copy .hero-cta-row{animation:rise-in .7s .12s both}
+.home-hero-visual.image-hero{min-height:unset;aspect-ratio:16/9;overflow:hidden;isolation:isolate;border:1px solid #dce8dd;border-radius:28px;background:#0e3928;box-shadow:0 28px 70px #183d2724;animation:hero-float 7s ease-in-out infinite}
+.image-hero-photo{object-fit:contain;object-position:center;transform:scale(1.015)}
+.image-hero-shade{position:absolute;inset:35% 0 0;background:linear-gradient(180deg,transparent,#06251fd9);z-index:1;pointer-events:none}
+.image-hero-tag{position:absolute;z-index:2;left:20px;top:20px;display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid #ffffff75;border-radius:99px;background:#0d3929b8;color:white;font-size:10px;font-weight:900;letter-spacing:.12em;backdrop-filter:blur(10px)}
+.image-hero-pulse{width:7px;height:7px;border-radius:50%;background:#b6ec62;box-shadow:0 0 0 0 #b6ec6270;animation:pulse-ring 2s infinite}
+.image-hero-caption{position:absolute;z-index:2;left:26px;bottom:24px;color:white;animation:rise-in .7s .25s both}
+.image-hero-caption span{font-size:9px;font-weight:900;letter-spacing:.16em;color:#d5eea5}
+.image-hero-caption strong{display:block;margin-top:8px;font-size:clamp(22px,2.7vw,32px);line-height:1.03;letter-spacing:-.04em}
+.image-hero .hero-float{z-index:3;animation:badge-bob 4.5s ease-in-out infinite}
+.image-hero .hero-float-top{top:18%;right:-10px;left:auto;bottom:auto;animation-delay:.5s}
+.image-hero .hero-float-bottom{right:8px;bottom:26px;left:auto;animation-delay:1.2s}
+.hero-animated-line{display:flex;align-items:center;gap:8px;margin-top:17px;color:#6c7a70;font-size:12px;font-weight:700}
+.hero-animated-words{position:relative;display:inline-block;min-width:185px;height:1.5em;color:#155d3b}
+.hero-animated-words b{position:absolute;inset:0;opacity:0;white-space:nowrap;animation:word-cycle 9s infinite;font-weight:850}
+.hero-animated-words b:nth-child(2){animation-delay:3s}.hero-animated-words b:nth-child(3){animation-delay:6s}
+@keyframes rise-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes hero-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes badge-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes pulse-ring{0%{box-shadow:0 0 0 0 #b6ec6270}75%,100%{box-shadow:0 0 0 8px #b6ec6200}}
+@keyframes word-cycle{0%,23%{opacity:1;transform:translateY(0)}30%,100%{opacity:0;transform:translateY(7px)}}
+
+/* Auth pages use the user's image without hiding the form on smaller screens. */
+.auth-layout{width:min(1200px,calc(100% - 36px));min-height:100vh;margin:0 auto;padding:28px 0;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);align-items:center;gap:34px}
+.auth-visual{position:relative;min-height:unset;aspect-ratio:16/9;overflow:hidden;border-radius:26px;background:#0c3525;box-shadow:0 25px 70px #183d2724}
+.auth-visual img{object-fit:contain;object-position:center}
+.auth-visual-shade{position:absolute;inset:0;background:linear-gradient(180deg,#00170d10 18%,#061d16bf 100%);z-index:1}
+.auth-visual-copy{position:absolute;z-index:2;left:clamp(24px,4vw,48px);right:28px;bottom:70px;color:white;animation:rise-in .8s both}
+.auth-visual-copy>span{font-size:10px;font-weight:900;letter-spacing:.16em;color:#d8efa8}
+.auth-visual-copy h2{margin:14px 0 10px;font-size:clamp(32px,4vw,54px);line-height:1.02;letter-spacing:-.055em}
+.auth-visual-copy p{max-width:420px;color:#e1ece3;font-size:14px;line-height:1.7}
+.auth-visual-orbit{position:absolute;z-index:2;left:clamp(24px,4vw,48px);bottom:25px;display:flex;gap:11px;align-items:center;color:#e2f0da;font-size:9px;font-weight:850;letter-spacing:.13em}
+.auth-visual-orbit i{width:4px;height:4px;border-radius:50%;background:#b6ec62}
+.auth-panel{width:100%;max-width:500px;justify-self:center}
+.auth-back{display:inline-block;margin:0 0 15px;color:var(--green);font-weight:800;text-decoration:none}
+.auth-form-panel{margin:0!important;padding:clamp(24px,4vw,42px)!important;border-radius:22px!important;box-shadow:0 20px 55px #183d2712}
+.auth-form-panel h1{margin:9px 0 6px;font-size:clamp(28px,3vw,36px)}
+.auth-switch{margin-top:18px;color:var(--muted);font-size:13px}.auth-switch a{color:var(--green);font-weight:800}
+
+/* Equation entry and readable inline math for both authors and students. */
+.math-input{margin:12px 0}
+.math-input-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.math-input-heading label{margin:0}
+.math-toggle{border:1px solid #d4e2d5;border-radius:9px;padding:6px 10px;background:#f0f7ef;color:#155d3b;font-size:11px;font-weight:850;cursor:pointer}
+.math-toolbar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 7px;padding:8px;border:1px solid #dce6dd;border-radius:10px;background:#f7fbf7}
+.math-toolbar button{min-width:39px;height:34px;border:1px solid #cfddcf;border-radius:7px;background:white;color:#153a28;font-weight:800;cursor:pointer}
+.math-toolbar button:hover{border-color:#176b43;background:#e9f5e9}
+.math-input-help{margin-top:4px;color:#728075;font-size:10px}
+.math-preview{margin-top:7px;padding:8px 10px;border:1px dashed #c8d8ca;border-radius:8px;background:#fbfdfb;color:#21392a;min-height:34px;overflow:auto}
+.math-rendered{display:inline-block;padding:0 2px}.math-rendered .katex{font-size:1.04em}
+.bb-prompt .katex,.bb-choice .katex,.bb-review-item .katex{font-size:1.08em}
+
+/* Keep exam controls above platform overlays and reserve room for the finish action. */
+.bb-shell{z-index:2147483000;isolation:isolate}
+.bb-footer{position:relative;z-index:2;padding-right:max(clamp(18px,3vw,60px),env(safe-area-inset-right))}
+.bb-nav .bb-finish{background:#155d3b;box-shadow:0 6px 20px #155d3b35}
+.bb-error{padding:10px 12px;border:1px solid #e7a6a6;border-radius:9px;background:#fff3f2;color:#8b2525;font-size:13px}
+.bb-modal-actions .bb-primary:disabled{opacity:.55;cursor:wait}
+.bb-break,.bb-result{position:fixed;inset:0;z-index:2147483000;overflow:auto;background:#15231c;color:white;display:grid;grid-template-columns:minmax(260px,.9fr) minmax(320px,1.1fr);align-items:center;gap:clamp(28px,7vw,90px);padding:clamp(24px,7vw,90px)}
+.bb-break-count{max-width:450px;padding:26px;text-align:center;border:1px solid #ffffff60;border-radius:18px;background:#ffffff08}
+.bb-break-count span{display:block;font-size:clamp(64px,10vw,106px);font-weight:800;letter-spacing:-.06em}
+.bb-break-copy{max-width:560px}.bb-break-copy h1,.bb-result h1{font-size:clamp(34px,5vw,56px);line-height:1.04;letter-spacing:-.045em}
+.bb-break-copy p,.bb-result p{color:#dae6dd;line-height:1.7}
+.bb-break-copy .bb-primary{margin-top:18px;background:#cde87f;color:#142b1d}
+.bb-break-copy .bb-primary:disabled{background:#455249;color:#b8c4ba}
+.bb-result{position:relative;inset:auto;min-height:100vh;display:block;background:#f4faf5;color:#172a20;padding:clamp(20px,5vw,64px);z-index:auto}
+.bb-result-header{display:flex;justify-content:space-between;align-items:center;gap:16px;max-width:1000px;margin:0 auto 20px}
+.bb-result-score{max-width:1000px;margin:0 auto 22px;padding:24px;border-radius:18px;background:#164f34;color:white;display:flex;align-items:end;gap:8px}
+.bb-result-score strong{font-size:clamp(56px,9vw,86px);line-height:.95;letter-spacing:-.06em}.bb-result-score span{padding-bottom:8px;color:#d3e8c6}
+.bb-result-list{max-width:1000px;margin:0 auto;display:grid;gap:12px}
+.bb-review-item{padding:18px;border:1px solid #dde7dd;border-radius:14px;background:white}
+.bb-review-item h3{margin:0 0 10px;font-size:15px;color:#54705b}
+.bb-review-item p{color:#192c20;white-space:pre-wrap}
+.bb-review-correct{padding:10px 12px;border-left:3px solid #176b43;background:#f2f8f1}
+.bb-ai-explanation{margin-top:10px;padding:12px;border-radius:10px;background:#eef7e9;color:#183c26;white-space:pre-wrap;line-height:1.65}
+.bb-result-actions{max-width:1000px;margin:22px auto}
+.bb-practice .bb-module-label{margin-left:12px;padding:3px 8px;border-radius:99px;background:#ffffff24;font-size:10px}
+.netlify-badge,#netlify-badge,[data-netlify-badge],iframe[title*="Netlify" i],iframe[aria-label*="Netlify" i]{display:none!important;visibility:hidden!important;pointer-events:none!important}
+
+@media(max-width:850px){
+  .home-hero{grid-template-columns:1fr;padding-top:54px}.home-hero-visual.image-hero{min-height:390px;margin-top:12px}
+  .auth-layout{grid-template-columns:1fr;gap:17px;padding:18px 0}.auth-visual{min-height:270px;order:2}.auth-visual-copy{bottom:52px}.auth-visual-copy h2{font-size:32px}.auth-visual-copy p{font-size:12px}.auth-panel{order:1;max-width:620px}.auth-visual-orbit{bottom:17px}
+  .bb-break{grid-template-columns:1fr;align-content:center;gap:20px}.bb-break-count{justify-self:center;width:min(420px,100%)}
+}
+@media(max-width:540px){
+  .home-hero-visual.image-hero{min-height:300px;border-radius:18px}.image-hero-tag{left:12px;top:12px;font-size:8px}.image-hero-caption{left:16px;bottom:15px}.image-hero .hero-float-top{right:6px;top:14%}.image-hero .hero-float-bottom{right:5px;bottom:15px}.hero-animated-line{align-items:flex-start;flex-direction:column;gap:2px}.hero-animated-words{min-width:210px}
+  .auth-layout{width:min(calc(100% - 22px),520px)}.auth-visual{min-height:230px;aspect-ratio:auto}.auth-form-panel{padding:22px!important}.bb-break{padding:20px}.bb-break-copy h1{font-size:34px}.bb-result-header{align-items:flex-start;flex-direction:column}.bb-result-score{padding:18px}.bb-result-score strong{font-size:64px}
+}
+@media(prefers-reduced-motion:reduce){
+  .home-hero-copy h1,.home-hero-copy>p,.home-hero-copy .hero-cta-row,.home-hero-visual.image-hero,.image-hero-tag .image-hero-pulse,.image-hero-caption,.image-hero .hero-float,.auth-visual-copy,.hero-animated-words b{animation:none!important;transition:none!important}
+  .hero-animated-words b:first-child{opacity:1}
+}

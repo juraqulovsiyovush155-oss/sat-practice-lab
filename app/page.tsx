@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { FAQ, SiteFooter, SiteHeader } from "@/components/marketing";
 
@@ -25,6 +26,10 @@ export default async function Home() {
             <span className="section-kicker"><i className="kicker-mark"></i>SAT & GRE · tayyorgarlik platformasi</span>
             <h1>Katta maqsadlar.<br /><em>Aniq tayyorgarlik.</em></h1>
             <p>SAT va GRE imtihonlariga puxta tayyorlaning. Mavzularni o‘rganing, reja asosida mashq qiling va o‘sishingizni kuzating.</p>
+            <div className="hero-animated-line" aria-label="SAT va GRE uchun aniq tayyorgarlik">
+              <span>Har kuni bir qadam:</span>
+              <span className="hero-animated-words"><b>mavzuni o‘rganing</b><b>testda mashq qiling</b><b>maqsadga yaqinlashing</b></span>
+            </div>
             <div className="hero-cta-row">
               <Link className="site-header-cta" href={startHref}>{startLabel}<span aria-hidden="true">↗</span></Link>
               <Link className="site-outline-cta" href="#programs">Dasturlarni ko‘rish <span aria-hidden="true">↓</span></Link>
@@ -32,22 +37,20 @@ export default async function Home() {
             {user && <div className="home-account-note">Kirish amalga oshirilgan: {user.email}</div>}
             {configError && <div className="site-config-notice">Platforma sozlanmoqda. Bir ozdan so‘ng qayta urinib ko‘ring.</div>}
           </div>
-          <div className="home-hero-visual" aria-label="SAT va GRE tayyorgarlik kartalari">
-            <div className="hero-visual-glow"></div>
-            <div className="hero-mini-label">MAQSADGA YO‘L</div>
-            <div className="hero-paper hero-paper-back"><span>Verbal</span><b>Reasoning</b><i>Read · Analyze · Answer</i></div>
-            <div className="hero-paper hero-paper-front">
-              <div className="paper-header"><span className="paper-logo">S</span><span>STUDY PLAN</span><span className="paper-status">ACTIVE</span></div>
-              <div className="paper-title">Bugungi maqsad</div>
-              <div className="paper-task"><span className="paper-check">✓</span><span>Yangi mavzu</span><b>01</b></div>
-              <div className="paper-task"><span className="paper-check">✓</span><span>Maqsadli mashq</span><b>02</b></div>
-              <div className="paper-task paper-task-muted"><span className="paper-check">·</span><span>Xatolar tahlili</span><b>03</b></div>
-              <div className="paper-progress"><span></span></div>
-              <div className="paper-progress-caption"><span>Bugungi reja</span><b>2 / 3</b></div>
-            </div>
-            <div className="hero-float hero-float-top">SAT <span>Reading & Writing · Math</span></div>
+          <div className="home-hero-visual image-hero" aria-label="SAT va GRE uchun tayyorgarlik">
+            <Image
+              src="/images/siyovush-sat-gre-hero.png"
+              alt="Siyovush SAT va GRE imtihonlariga tayyorlanmoqda"
+              fill
+              priority
+              sizes="(max-width: 900px) 100vw, 46vw"
+              className="image-hero-photo"
+            />
+            <div className="image-hero-shade" />
+            <div className="image-hero-tag"><span className="image-hero-pulse" />SAT · GRE PREP</div>
+            <div className="image-hero-caption"><span>STRATEGY · PRACTICE · HIGH SCORE</span><strong>Kelajak sari<br />aniq qadam.</strong></div>
+            <div className="hero-float hero-float-top">1600 <span>SAT maqsad balli</span></div>
             <div className="hero-float hero-float-bottom">GRE <span>Verbal · Quant · Writing</span></div>
-            <div className="hero-star">✳</div>
           </div>
           <div className="home-hero-bottom">
             <span>IKKI YO‘NALISH</span><i></i><span>SAT · GRE</span><i></i><span>REJALI MASHQLAR</span><i></i><span>O‘SISHNI KUZATING</span>

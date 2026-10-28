@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { MathInput } from "@/components/math-formula";
 
 type TestSummary = {
   id: string;
@@ -16,6 +17,8 @@ type QuestionRecord = {
   id: string;
   prompt: string;
   choices: string[];
+  section: "math" | "reading_writing";
+  module_number: number;
   position: number;
   topic: string;
 };
@@ -37,12 +40,15 @@ const letters = ["A", "B", "C", "D"];
 export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const [selectedTestId, setSelectedTestId] = useState(tests[0]?.id ?? "");
   const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [draftSection, setDraftSection] = useState<"math" | "reading_writing">(tests[0]?.section ?? "math");
+  const [draftModule, setDraftModule] = useState(1);
   const [editor, setEditor] = useState<EditorValues>(emptyEditor);
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const supabase = useMemo(() => createClient(), []);
   const selectedTest = tests.find((test) => test.id === selectedTestId) ?? null;
 
@@ -67,7 +73,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       setError("");
       const { data, error: questionsError } = await supabase
         .from("questions")
-        .select("id,prompt,choices,position,topic")
+        .select("id,prompt,choices,section,module_number,position,topic")
         .eq("test_id", selectedTestId)
         .order("position", { ascending: true });
       if (cancelled) return;
@@ -106,6 +112,8 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
 
     const prompt = editor.prompt.trim();
     const choices = editor.choices.map((choice) => choice.trim());
+    const section = selectedTest.kind === "mock" ? draftSection : selectedTest.section ?? "math";
+    const moduleNumber = selectedTest.kind === "mock" ? draftModule : 1;
     if (!prompt || choices.some((choice) => !choice)) {
       setError("Savol matni va A–D javoblarining barchasini to‘ldiring.");
       return;
@@ -119,7 +127,12 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       if (questionId) {
         const { error: updateError } = await supabase
           .from("questions")
-          .update({ prompt, choices })
+          .update({
+            prompt,
+            choices,
+            section,
+            module_number: moduleNumber,
+          })
           .eq("id", questionId)
           .eq("test_id", selectedTest.id);
         if (updateError) throw updateError;
@@ -128,11 +141,12 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
           .from("questions")
           .insert({
             test_id: selectedTest.id,
-            section: selectedTest.section ?? "math",
+            section,
             topic: selectedTest.topic?.trim() || "SAT",
             prompt,
             choices,
-            position: Math.max(0, ...questions.map((question) => question.position)) + 1,
+            module_number: moduleNumber,
+            position: Math.max(0, ...questions.filter((question) => question.section === section && question.module_number === moduleNumber).map((question) => question.position)) + 1,
           })
           .select("id")
           .single();
@@ -159,7 +173,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       resetEditor();
       const { data, error: reloadError } = await supabase
         .from("questions")
-        .select("id,prompt,choices,position,topic")
+        .select("id,prompt,choices,section,module_number,position,topic")
         .eq("test_id", selectedTest.id)
         .order("position", { ascending: true });
       if (reloadError) throw reloadError;
@@ -188,6 +202,8 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       return;
     }
     setEditingQuestionId(question.id);
+    setDraftSection(question.section);
+    setDraftModule(question.module_number);
     setEditor({
       prompt: question.prompt,
       choices: question.choices,
@@ -215,8 +231,9 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     }
     if (editingQuestionId === question.id) resetEditor();
     const remaining = questions.filter((item) => item.id !== question.id);
+    const affected = remaining.filter((item) => item.section === question.section && item.module_number === question.module_number);
     let reorderError = "";
-    for (const [index, item] of remaining.entries()) {
+    for (const [index, item] of affected.entries()) {
       const { error: positionError } = await supabase
         .from("questions")
         .update({ position: index + 1 })
@@ -226,12 +243,10 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         break;
       }
     }
-    setQuestions(
-      remaining.map((item, index) => ({
-        ...item,
-        position: reorderError ? item.position : index + 1,
-      })),
-    );
+    setQuestions(remaining.map((item) => {
+      if (reorderError || item.section !== question.section || item.module_number !== question.module_number) return item;
+      return { ...item, position: affected.findIndex((candidate) => candidate.id === item.id) + 1 };
+    }));
     if (reorderError) {
       setError("Savol o‘chirildi, lekin tartibni yangilashda xatolik yuz berdi: " + reorderError);
     } else {
@@ -246,6 +261,21 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     if (!questions.length) {
       setError("E’lon qilishdan oldin testga kamida bitta savol qo‘shing.");
       return;
+    }
+    if (selectedTest.kind === "mock") {
+      const requiredModules = [
+        { section: "reading_writing", module: 1, label: "Reading and Writing · Module 1" },
+        { section: "reading_writing", module: 2, label: "Reading and Writing · Module 2" },
+        { section: "math", module: 1, label: "Math · Module 1" },
+        { section: "math", module: 2, label: "Math · Module 2" },
+      ];
+      const missing = requiredModules.filter((part) =>
+        !questions.some((question) => question.section === part.section && question.module_number === part.module),
+      );
+      if (missing.length) {
+        setError("E’lon qilishdan oldin har bir SAT moduliga kamida bitta savol qo‘shing: " + missing.map((part) => part.label).join(", "));
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -279,7 +309,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       <div className="row">
         <div>
           <h2>Test savollari</h2>
-          <p>Testni tanlang, savollarni kiriting va tayyor bo‘lgach e’lon qiling.</p>
+      <p>Testni tanlang, savollarni modullarga joylang va tayyor bo‘lgach e’lon qiling.</p>
         </div>
         {selectedTest && (
           <span className="tag">{selectedTest.published ? "E’lon qilingan" : "Qoralama"}</span>
@@ -293,6 +323,9 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         value={selectedTestId}
         onChange={(event) => {
           setSelectedTestId(event.target.value);
+            const nextTest = tests.find((test) => test.id === event.target.value);
+            setDraftSection(nextTest?.section ?? "math");
+            setDraftModule(1);
           resetEditor();
           setMessage("");
           setError("");
@@ -326,28 +359,45 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                   </button>
                 )}
               </div>
-              <label htmlFor="question-prompt">Savol matni</label>
-              <textarea
+              {selectedTest.kind === "mock" ? (
+                <div className="cards">
+                  <div>
+                    <label htmlFor="question-section">Bo‘lim</label>
+                    <select id="question-section" className="field" value={draftSection} onChange={(event) => setDraftSection(event.target.value as "math" | "reading_writing")}>
+                      <option value="reading_writing">Reading and Writing</option>
+                      <option value="math">Math</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="question-module">Modul</label>
+                    <select id="question-module" className="field" value={draftModule} onChange={(event) => setDraftModule(Number(event.target.value))}>
+                      <option value={1}>Module 1</option>
+                      <option value={2}>Module 2</option>
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <p className="notice">{selectedTest.section === "math" ? "Math · Module 1" : "Reading and Writing · Module 1"}</p>
+              )}
+              <MathInput
                 id="question-prompt"
-                className="field"
+                label="Savol matni"
+                multiline
                 rows={5}
                 required
                 value={editor.prompt}
-                onChange={(event) =>
-                  setEditor((current) => ({ ...current, prompt: event.target.value }))
-                }
+                onChange={(prompt) => setEditor((current) => ({ ...current, prompt }))}
                 placeholder="Savol yoki Reading & Writing matnini kiriting"
               />
               <div className="cards">
                 {editor.choices.map((choice, index) => (
                   <div key={letters[index]}>
-                    <label htmlFor={"choice-" + letters[index]}>Javob {letters[index]}</label>
-                    <input
+                    <MathInput
                       id={"choice-" + letters[index]}
-                      className="field"
+                      label={"Javob " + letters[index]}
                       required
                       value={choice}
-                      onChange={(event) => updateChoice(index, event.target.value)}
+                      onChange={(value) => updateChoice(index, value)}
                     />
                   </div>
                 ))}
@@ -374,18 +424,43 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="explanation">Izoh (ixtiyoriy)</label>
-                  <input
+                  <MathInput
                     id="explanation"
-                    className="field"
+                    label="Javob izohi (ixtiyoriy)"
+                    multiline
+                    rows={3}
                     value={editor.explanation}
-                    onChange={(event) =>
-                      setEditor((current) => ({ ...current, explanation: event.target.value }))
-                    }
+                    onChange={(explanation) => setEditor((current) => ({ ...current, explanation }))}
                     placeholder="Javob izohi"
                   />
                 </div>
               </div>
+
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={aiBusy || !editor.prompt.trim() || editor.choices.some((choice) => !choice.trim())}
+                onClick={async () => {
+                  setAiBusy(true);
+                  setError("");
+                  try {
+                    const response = await fetch("/api/ai/explain", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ mode: "draft", prompt: editor.prompt, choices: editor.choices, answerIndex: editor.answerIndex }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || "AI izoh yaratilmadi.");
+                    setEditor((current) => ({ ...current, explanation: result.explanation }));
+                  } catch (caught) {
+                    setError(caught instanceof Error ? caught.message : "AI izoh yaratilmadi.");
+                  } finally {
+                    setAiBusy(false);
+                  }
+                }}
+              >
+                {aiBusy ? "AI izoh tayyorlayapti…" : "AI bilan izoh yaratish"}
+              </button>
 
               {error && <p className="error" role="alert">{error}</p>}
               {message && <p className="success" role="status">{message}</p>}
