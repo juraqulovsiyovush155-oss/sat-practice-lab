@@ -553,8 +553,26 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
 
   async function deleteSelectedTest() {
     if (!selectedTest) return;
-    const confirmed = window.confirm(`“${selectedTest.title}” testini butunlay o‘chirasizmi? O‘quvchi urinishlari mavjud bo‘lsa, natijalarni saqlash uchun o‘chirish bloklanadi.`);
+    const { count, error: attemptCountError } = await supabase
+      .from("attempts")
+      .select("id", { count: "exact", head: true })
+      .eq("test_id", selectedTest.id);
+    if (attemptCountError) {
+      setError("O‘chirishdan oldin o‘quvchi urinishlari sonini tekshirib bo‘lmadi: " + attemptCountError.message);
+      return;
+    }
+    const attemptCount = count ?? 0;
+    const confirmed = window.confirm(attemptCount
+      ? `“${selectedTest.title}” testini o‘chirsangiz, unga tegishli ${attemptCount} ta o‘quvchi urinishi, javoblari va natijalari ham butunlay o‘chadi. Bu amalni qaytarib bo‘lmaydi. Davom etasizmi?`
+      : `“${selectedTest.title}” testini butunlay o‘chirasizmi?`);
     if (!confirmed) return;
+    if (attemptCount > 0) {
+      const typedTitle = window.prompt(`Natijalarni ham o‘chirishni tasdiqlash uchun test nomini aynan kiriting:\n${selectedTest.title}`);
+      if (typedTitle !== selectedTest.title) {
+        setMessage("Test nomi mos kelmadi. O‘chirish bekor qilindi.");
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     setMessage("");
@@ -564,7 +582,9 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       setSaving(false);
       return;
     }
-    setMessage("Test va unga tegishli savollar o‘chirildi.");
+    setMessage(attemptCount
+      ? `Test, ${attemptCount} ta urinish va barcha natijalar o‘chirildi.`
+      : "Test va unga tegishli savollar o‘chirildi.");
     window.location.reload();
   }
 
