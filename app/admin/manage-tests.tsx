@@ -526,7 +526,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                   {pdfBusy ? "PDF tahlil qilinmoqda…" : "PDF’ni AI bilan o‘qish"}
                 </button>
               </div>
-              <p className="math-input-help">Fayl hajmi 3.5 MB gacha, 160 sahifa va 100 tagacha savol. Matni tanlanadigan yoki OCR qilingan PDF ishlaydi. AI javoblarini bazaga saqlashdan avval ko‘rib chiqing.</p>
+              <p className="math-input-help">Fayl hajmi 3.5 MB gacha va 160 sahifa. Skaner PDF ham AI tomonidan rasm sahifalaridan o‘qiladi (48 sahifagacha). Savol va javoblarni testga saqlashdan oldin tekshiring.</p>
               {importCandidates.length > 0 && (
                 <div className="pdf-import-preview">
                   <div className="row"><h4>Tekshirish uchun ajratilgan savollar ({importCandidates.length})</h4><button type="button" className="btn secondary" onClick={() => setImportCandidates([])}>Bekor qilish</button></div>
