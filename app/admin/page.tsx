@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import AdminCreateTest from "./create-test";
+import AdminLearningAnalytics from "./learning-analytics";
 import AdminManageStudents from "./manage-students";
 import AdminManageTests from "./manage-tests";
 
@@ -28,6 +29,36 @@ export default async function AdminPage() {
     .eq("role", "student")
     .order("created_at", { ascending: false });
   const students = studentRows ?? [];
+  let durationTrackingAvailable = true;
+  let learningAttempts: {
+    student_id: string;
+    test_id: string;
+    correct_count: number | null;
+    question_count: number | null;
+    estimated_score: number | null;
+    score_max: number | null;
+    submitted_at: string | null;
+    duration_seconds?: number | null;
+  }[] = [];
+  if (students.length) {
+    const studentIds = students.map((student) => student.id);
+    const attemptsWithDuration = await supabase.from("attempts")
+      .select("student_id,test_id,correct_count,question_count,estimated_score,score_max,submitted_at,duration_seconds")
+      .in("student_id", studentIds)
+      .not("submitted_at", "is", null)
+      .order("submitted_at", { ascending: false });
+    if (attemptsWithDuration.error && /duration_seconds|column .* does not exist/i.test(attemptsWithDuration.error.message)) {
+      durationTrackingAvailable = false;
+      const fallback = await supabase.from("attempts")
+        .select("student_id,test_id,correct_count,question_count,estimated_score,score_max,submitted_at")
+        .in("student_id", studentIds)
+        .not("submitted_at", "is", null)
+        .order("submitted_at", { ascending: false });
+      learningAttempts = (fallback.data ?? []).map((attempt) => ({ ...attempt, duration_seconds: 0 }));
+    } else {
+      learningAttempts = attemptsWithDuration.data ?? [];
+    }
+  }
 
   return (
     <>
@@ -43,6 +74,7 @@ export default async function AdminPage() {
         <h1>Testlar boshqaruvi</h1>
         <p>O‘quvchi akkauntlarini tasdiqlang, test yarating, savollarni kiriting va tayyor bo‘lgach o‘quvchilarga e’lon qiling.</p>
 
+        <AdminLearningAnalytics students={students} attempts={learningAttempts} durationTrackingAvailable={durationTrackingAvailable} />
         {studentError ? <p className="error">O‘quvchilar ro‘yxati yuklanmadi. Supabase migratsiyasini tekshiring: {studentError.message}</p> : <AdminManageStudents initialStudents={students} />}
         <AdminCreateTest />
         <AdminManageTests tests={testList} />

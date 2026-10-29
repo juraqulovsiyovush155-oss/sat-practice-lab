@@ -46,6 +46,7 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
   const [summary, setSummary] = useState<ExamSummary | null>(null);
   const autoAdvance = useRef(false);
   const submitLock = useRef(false);
+  const activePracticeSeconds = useRef(0);
 
   const currentModule = modules[stage];
   const currentItems = useMemo(
@@ -84,7 +85,10 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
 
   useEffect(() => {
     if (loading || loadError || summary || phase !== "test" || !directionsSeen || seconds <= 0) return;
-    const timer = window.setTimeout(() => setSeconds((remaining) => Math.max(0, remaining - 1)), 1000);
+    const timer = window.setTimeout(() => {
+      activePracticeSeconds.current += 1;
+      setSeconds((remaining) => Math.max(0, remaining - 1));
+    }, 1000);
     return () => window.clearTimeout(timer);
   }, [loading, loadError, summary, phase, directionsSeen, seconds]);
 
@@ -100,7 +104,15 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
     setBusy(true);
     setError("");
     const payload = items.map((question) => ({ question_id: question.id, selected_index: answers[question.id] ?? null }));
-    const { data, error: submitError } = await supabase.rpc("submit_test_attempt", { p_test_id: test.id, p_answers: payload });
+    let submitResult = await supabase.rpc("submit_test_attempt", {
+      p_test_id: test.id,
+      p_answers: payload,
+      p_duration_seconds: activePracticeSeconds.current,
+    });
+    if (submitResult.error && ["PGRST202", "42883"].includes(submitResult.error.code ?? "")) {
+      submitResult = await supabase.rpc("submit_test_attempt", { p_test_id: test.id, p_answers: payload });
+    }
+    const { data, error: submitError } = submitResult;
     if (submitError) {
       setError(submitError.message);
       setOverlay("review");

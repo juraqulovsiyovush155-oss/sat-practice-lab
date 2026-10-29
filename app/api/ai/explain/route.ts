@@ -85,12 +85,11 @@ export async function POST(request: Request) {
       "Variantlar: " + (question.choices as string[]).map((choice, index) => String.fromCharCode(65 + index) + ") " + choice).join(" | "),
       "Javob kalitidagi to‘g‘ri javob: " + String.fromCharCode(65 + Number(question.answer_index)) + ") " + (question.choices as string[])[Number(question.answer_index)],
       "O‘quvchi tanlovi: " + (question.selected_index === null ? "javob berilmagan" : String.fromCharCode(65 + Number(question.selected_index)) + ") " + (question.choices as string[])[Number(question.selected_index)]),
-      question.explanation ? "Adminning izohi: " + question.explanation : "Admin izohi kiritilmagan.",
     ].join("\n\n");
   }
 
   if (!process.env.OPENAI_BASE_URL && !process.env.OPENAI_API_KEY) {
-    return Response.json({ error: "AI Gateway hali ulanmagan. Netlify loyiha sozlamalarida AI Features yoqilganini tekshiring; admin izohi hozircha ko‘rinadi." }, { status: 503 });
+    return Response.json({ error: "AI Gateway hali ulanmagan. Netlify loyiha sozlamalarida AI Features yoqilganini tekshiring." }, { status: 503 });
   }
 
   try {

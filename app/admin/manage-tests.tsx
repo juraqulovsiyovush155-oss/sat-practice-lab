@@ -33,7 +33,6 @@ type EditorValues = {
   choices: string[];
   choicesUz: string[];
   answerIndex: number;
-  explanation: string;
   imageFile: File | null;
   imagePath: string | null;
   imagePreview: string | null;
@@ -65,7 +64,6 @@ const emptyEditor: EditorValues = {
   choices: ["", "", "", ""],
   choicesUz: ["", "", "", ""],
   answerIndex: 0,
-  explanation: "",
   imageFile: null,
   imagePath: null,
   imagePreview: null,
@@ -79,6 +77,27 @@ const VISION_CHUNK_STEP = 2;
 const VISION_CHUNK_BYTES = 450_000;
 const MAX_VISION_PAGES = 48;
 const VISION_CONCURRENCY = 1;
+
+function requiredModuleQuestionCount(section: "math" | "reading_writing") {
+  return section === "math" ? 22 : 27;
+}
+
+async function translateQuestions(questions: { prompt: string; choices: string[] }[]) {
+  const response = await fetch("/api/ai/translate-question", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ questions }),
+  });
+  const result = await response.json().catch(() => null) as {
+    error?: string;
+    translations?: { prompt_uz: string; choices_uz: string[] }[];
+  } | null;
+  if (!response.ok) throw new Error(result?.error || "AI tarjima bajara olmadi.");
+  if (!result?.translations || result.translations.length !== questions.length) {
+    throw new Error("AI tarjima natijasi to‘liq kelmadi. Qayta urinib ko‘ring.");
+  }
+  return result.translations;
+}
 const sortQuestions = (questions: QuestionRecord[]) => [...questions].sort((left, right) => {
   const sectionOrder = (section: QuestionRecord["section"]) => section === "reading_writing" ? 0 : 1;
   return sectionOrder(left.section) - sectionOrder(right.section)
@@ -194,6 +213,10 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const supabase = useMemo(() => createClient(), []);
   const knownTestIds = useRef(new Set(tests.map((test) => test.id)));
   const selectedTest = tests.find((test) => test.id === selectedTestId) ?? null;
+  const moduleLimit = requiredModuleQuestionCount(draftSection);
+  const selectedModuleCount = questions.filter((question) => question.section === draftSection && question.module_number === draftModule).length;
+  const moduleOneCount = questions.filter((question) => question.section === draftSection && question.module_number === 1).length;
+  const moduleTwoCount = questions.filter((question) => question.section === draftSection && question.module_number === 2).length;
 
   useEffect(() => {
     const newlyCreatedTest = tests.find((test) => !knownTestIds.current.has(test.id));
@@ -261,6 +284,22 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         choiceIndex === index ? value : choice,
       ),
     }));
+  }
+
+  async function translateEditorToUzbek() {
+    setAiBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const [translation] = await translateQuestions([{ prompt: editor.prompt, choices: editor.choices }]);
+      if (!translation) throw new Error("AI tarjima qaytarmadi.");
+      setEditor((current) => ({ ...current, promptUz: translation.prompt_uz, choicesUz: translation.choices_uz }));
+      setMessage("O‘zbekcha tarjima tayyor. Saqlashdan oldin tekshirib chiqing.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI tarjima bajara olmadi.");
+    } finally {
+      setAiBusy(false);
+    }
   }
 
   function imageFileChange(file: File | null, update: (file: File | null, preview: string | null) => void) {
@@ -393,15 +432,63 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
 
   async function saveImportedQuestions() {
     if (!selectedTest || selectedTest.published || !importCandidates.length) return;
+    const preparedCandidates = importCandidates.map((question) => ({ ...question }));
+    if (selectedTest.kind === "mock") {
+      const sections = [...new Set(preparedCandidates.map((question) => question.section))];
+      for (const section of sections) {
+        const limit = requiredModuleQuestionCount(section);
+        const currentModuleOne = questions.filter((question) => question.section === section && question.module_number === 1).length;
+        const currentModuleTwo = questions.filter((question) => question.section === section && question.module_number === 2).length;
+        const incomingModuleOne = preparedCandidates.filter((question) => question.section === section && question.module_number === 1).length;
+        const incomingModuleTwo = preparedCandidates.filter((question) => question.section === section && question.module_number === 2).length;
+        if (currentModuleOne + incomingModuleOne > limit || currentModuleTwo + incomingModuleTwo > limit) {
+          setError(`${section === "math" ? "Math" : "Reading and Writing"} moduli ${limit} tadan savol bilan cheklangan. PDF savollarini tahrirlab, to‘g‘ri modullarga ajrating.`);
+          return;
+        }
+        if (incomingModuleTwo > 0 && currentModuleOne + incomingModuleOne !== limit) {
+          setError(`${section === "math" ? "Math" : "Reading and Writing"} Module 2 ni saqlashdan oldin Module 1 ni to‘liq ${limit} taga yetkazing.`);
+          return;
+        }
+      }
+    }
     setSaving(true);
     setError("");
     setMessage("");
+    let translatedCount = 0;
+    try {
+      const missingTranslationIndexes = preparedCandidates
+        .map((question, index) => ({ question, index }))
+        .filter(({ question }) => !question.prompt_uz?.trim() || !question.choices_uz?.every((choice) => choice.trim()))
+        .map(({ index }) => index);
+      for (let offset = 0; offset < missingTranslationIndexes.length; offset += 10) {
+        const indexes = missingTranslationIndexes.slice(offset, offset + 10);
+        setMessage(`AI o‘zbekchaga tarjima qilmoqda… ${Math.min(offset + indexes.length, missingTranslationIndexes.length)}/${missingTranslationIndexes.length}`);
+        const translations = await translateQuestions(indexes.map((index) => ({
+          prompt: preparedCandidates[index].prompt,
+          choices: preparedCandidates[index].choices,
+        })));
+        translations.forEach((translation, index) => {
+          const candidateIndex = indexes[index];
+          if (candidateIndex === undefined) return;
+          preparedCandidates[candidateIndex] = {
+            ...preparedCandidates[candidateIndex],
+            prompt_uz: translation.prompt_uz,
+            choices_uz: translation.choices_uz as ImportedQuestion["choices_uz"],
+          };
+          translatedCount++;
+        });
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? `${caught.message} PDF savollari saqlanmadi.` : "AI tarjima bajara olmadi. PDF savollari saqlanmadi.");
+      setSaving(false);
+      return;
+    }
     const nextPosition = new Map<string, number>();
     for (const question of questions) {
       const key = `${question.section}:${question.module_number}`;
       nextPosition.set(key, Math.max(nextPosition.get(key) ?? 0, question.position));
     }
-    const rows = importCandidates.map((question) => {
+    const rows = preparedCandidates.map((question) => {
       const key = `${question.section}:${question.module_number}`;
       const position = (nextPosition.get(key) ?? 0) + 1;
       nextPosition.set(key, position);
@@ -422,7 +509,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     });
     try {
       for (let index = 0; index < rows.length; index++) {
-        const candidate = importCandidates[index];
+        const candidate = preparedCandidates[index];
         const row = rows[index];
         if (!candidate || !row) continue;
         const imageFile = candidate.imageFile;
@@ -456,7 +543,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       setImportWarnings([]);
       setEditingImportIndex(null);
       setPdfFile(null);
-      setMessage(`${rows.length} ta savol va javob kaliti testga saqlandi.`);
+      setMessage(`${rows.length} ta savol va javob kaliti testga saqlandi.${translatedCount ? ` ${translatedCount} ta savol AI yordamida o‘zbekchaga tarjima qilindi.` : ""}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "PDF savollari bazaga saqlanmadi.");
     } finally {
@@ -499,6 +586,23 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     if (!choiceImagesAvailable && editor.choiceImageFiles.some(Boolean)) {
       setError("Javob varianti rasmlarini saqlash uchun Supabase’dagi 0006_choice_images.sql migrationni ishga tushiring.");
       return;
+    }
+    if (selectedTest.kind === "mock") {
+      const limit = requiredModuleQuestionCount(section);
+      const targetModuleCount = questions.filter((question) =>
+        question.id !== editingQuestionId && question.section === section && question.module_number === moduleNumber,
+      ).length;
+      const firstModuleCount = questions.filter((question) =>
+        question.id !== editingQuestionId && question.section === section && question.module_number === 1,
+      ).length;
+      if (targetModuleCount >= limit) {
+        setError(`${section === "math" ? "Math" : "Reading and Writing"} · Module ${moduleNumber} to‘ldi (${limit}/${limit}). Boshqa modulni tanlang yoki savolni tahrirlang.`);
+        return;
+      }
+      if (moduleNumber === 2 && firstModuleCount < limit && !questions.some((question) => question.section === section && question.module_number === 2)) {
+        setError(`Module 2 ni boshlashdan oldin ${section === "math" ? "Math" : "Reading and Writing"} Module 1 ni ${limit} ta savol bilan to‘ldiring.`);
+        return;
+      }
     }
     setSaving(true);
     setError("");
@@ -562,7 +666,6 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         {
           question_id: questionId,
           answer_index: editor.answerIndex,
-          explanation: editor.explanation.trim(),
         },
         { onConflict: "question_id" },
       );
@@ -574,12 +677,21 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       }
 
       setMessage(editingQuestionId ? "Savol yangilandi." : "Savol testga qo‘shildi.");
+      const wasEditing = Boolean(editingQuestionId);
       resetEditor();
       const questionResult = await readQuestionRecords(supabase, selectedTest.id);
       const { data, error: reloadError } = questionResult;
       setChoiceImagesAvailable(questionResult.choiceImagesAvailable);
       if (reloadError) throw reloadError;
-      setQuestions(sortQuestions((data ?? []) as QuestionRecord[]));
+      const refreshedQuestions = sortQuestions((data ?? []) as QuestionRecord[]);
+      setQuestions(refreshedQuestions);
+      if (!wasEditing && selectedTest.kind === "mock" && moduleNumber === 1) {
+        const completedCount = refreshedQuestions.filter((question) => question.section === section && question.module_number === 1).length;
+        if (completedCount === requiredModuleQuestionCount(section)) {
+          setDraftModule(2);
+          setMessage(`${section === "math" ? "Math" : "Reading and Writing"} Module 1 to‘ldi (${completedCount}/${requiredModuleQuestionCount(section)}). Endi Module 2 ga o‘ting.`);
+        }
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Savol saqlanmadi.");
     } finally {
@@ -592,7 +704,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     setMessage("");
     const { data, error: keyError } = await supabase
       .from("question_keys")
-      .select("answer_index,explanation")
+      .select("answer_index")
       .eq("question_id", question.id)
       .maybeSingle();
     if (keyError) {
@@ -621,7 +733,6 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       choices: question.choices,
       choicesUz: question.choices_uz ?? ["", "", "", ""],
       answerIndex: data.answer_index,
-      explanation: data.explanation ?? "",
       imageFile: null,
       imagePath: question.image_url,
       imagePreview: signedImage?.data?.signedUrl ?? null,
@@ -900,19 +1011,29 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
               {selectedTest.kind === "mock" ? (
                 <div className="cards">
                   <div>
-                    <label htmlFor="question-section">Bo‘lim</label>
-                    <select id="question-section" className="field" value={draftSection} onChange={(event) => setDraftSection(event.target.value as "math" | "reading_writing")}>
+                    <label htmlFor="question-section">1. Savol bo‘limini tanlang</label>
+                    <select id="question-section" className="field" value={draftSection} onChange={(event) => {
+                      const section = event.target.value as "math" | "reading_writing";
+                      const limit = requiredModuleQuestionCount(section);
+                      const firstCount = questions.filter((question) => question.section === section && question.module_number === 1).length;
+                      const secondCount = questions.filter((question) => question.section === section && question.module_number === 2).length;
+                      setDraftSection(section);
+                      setDraftModule(firstCount < limit ? 1 : secondCount < limit ? 2 : 2);
+                    }}>
                       <option value="reading_writing">Reading and Writing</option>
                       <option value="math">Math</option>
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="question-module">Modul</label>
+                    <label htmlFor="question-module">2. Modulni tanlang</label>
                     <select id="question-module" className="field" value={draftModule} onChange={(event) => setDraftModule(Number(event.target.value))}>
-                      <option value={1}>Module 1</option>
-                      <option value={2}>Module 2</option>
+                      <option value={1}>Module 1 · {moduleOneCount}/{moduleLimit}</option>
+                      <option value={2} disabled={moduleOneCount < moduleLimit && moduleTwoCount === 0}>Module 2 · {moduleTwoCount}/{moduleLimit}</option>
                     </select>
                   </div>
+                  <p className="notice" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                    {draftSection === "math" ? "Math" : "Reading and Writing"}: Module 1 — {moduleOneCount}/{moduleLimit}; Module 2 — {moduleTwoCount}/{moduleLimit}. Tanlangan modulda {Math.max(0, moduleLimit - selectedModuleCount)} ta savol joyi qoldi. Har modul alohida: {draftSection === "math" ? "35" : "32"} daqiqa. Module 2 Module 1 to‘liq bo‘lgach ochiladi.
+                  </p>
                 </div>
               ) : (
                 <p className="notice">{selectedTest.section === "math" ? "Math · Module 1" : "Reading and Writing · Module 1"}</p>
@@ -929,6 +1050,14 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                 onChange={(prompt) => setEditor((current) => ({ ...current, prompt }))}
                 placeholder="Savol yoki Reading & Writing matnini kiriting"
               />
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={aiBusy || !editor.prompt.trim() || editor.choices.some((choice) => !choice.trim())}
+                onClick={() => void translateEditorToUzbek()}
+              >
+                {aiBusy ? "AI tarjima qilmoqda…" : "AI bilan o‘zbekchaga tarjima qilish"}
+              </button>
               <MathInput id="question-prompt-uz" label="O‘zbekcha tarjima (ixtiyoriy)" multiline rows={3} value={editor.promptUz} onChange={(promptUz) => setEditor((current) => ({ ...current, promptUz }))} placeholder="Savolning o‘zbekcha tarjimasi" />
               <div className="cards">
                 {editor.choices.map((choice, index) => (
@@ -978,48 +1107,11 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <MathInput
-                    id="explanation"
-                    label="Javob izohi (ixtiyoriy)"
-                    multiline
-                    rows={3}
-                    value={editor.explanation}
-                    onChange={(explanation) => setEditor((current) => ({ ...current, explanation }))}
-                    placeholder="Javob izohi"
-                  />
-                </div>
               </div>
-
-              <button
-                type="button"
-                className="btn secondary"
-                disabled={aiBusy || !editor.prompt.trim() || editor.choices.some((choice) => !choice.trim())}
-                onClick={async () => {
-                  setAiBusy(true);
-                  setError("");
-                  try {
-                    const response = await fetch("/api/ai/explain", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ mode: "draft", prompt: editor.prompt, choices: editor.choices, answerIndex: editor.answerIndex }),
-                    });
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.error || "AI izoh yaratilmadi.");
-                    setEditor((current) => ({ ...current, explanation: result.explanation }));
-                  } catch (caught) {
-                    setError(caught instanceof Error ? caught.message : "AI izoh yaratilmadi.");
-                  } finally {
-                    setAiBusy(false);
-                  }
-                }}
-              >
-                {aiBusy ? "AI izoh tayyorlayapti…" : "AI bilan izoh yaratish"}
-              </button>
 
               {error && <p className="error" role="alert">{error}</p>}
               {message && <p className="success" role="status">{message}</p>}
-              <button className="btn primary" disabled={saving}>
+              <button className="btn primary" disabled={saving || (selectedTest.kind === "mock" && selectedModuleCount >= moduleLimit && !editingQuestionId)}>
                 {saving ? "Saqlanmoqda…" : editingQuestionId ? "O‘zgarishlarni saqlash" : "Savolni saqlash"}
               </button>
             </form>

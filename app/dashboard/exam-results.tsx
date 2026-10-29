@@ -104,7 +104,6 @@ export default function ExamResults({ summary, onBack }: { summary: ExamSummary;
               {question.prompt_uz && <details className="bb-translation"><summary>O‘zbekcha tarjimani ko‘rish</summary><p><MathText value={question.prompt_uz} /></p></details>}
               <div className="bb-review-correct"><b>To‘g‘ri javob:</b> <MathText value={correct} />{question.choice_images?.[question.answer_index] && <img className="bb-choice-image" src={question.choice_images[question.answer_index] ?? ""} alt="To‘g‘ri javob rasmi" />}</div>
               <p><b>Sizning javobingiz:</b> <MathText value={selected} /> {question.is_correct ? "✓" : "·"}</p>
-              {question.explanation && <div className="bb-ai-explanation"><b>Admin izohi:</b><br /><MathText value={question.explanation} /></div>}
               {aiExplanations[question.question_id] ? (
                 <div className="bb-ai-explanation"><b>AI izohi:</b><br /><MathText value={aiExplanations[question.question_id]} /></div>
               ) : (
