@@ -17,6 +17,7 @@ type ReviewQuestion = {
   is_correct: boolean;
   explanation: string;
   image_url?: string | null;
+  choice_images?: (string | null)[] | null;
   prompt_uz?: string | null;
   choices_uz?: string[] | null;
 };
@@ -48,9 +49,9 @@ export default function ExamResults({ summary, onBack }: { summary: ExamSummary;
       if (reviewError) setError(reviewError.message);
       else {
         const signedQuestions = await Promise.all(((data ?? []) as ReviewQuestion[]).map(async (question) => {
-          if (!question.image_url) return question;
-          const { data: signed } = await supabase.storage.from("question-images").createSignedUrl(question.image_url, 3600);
-          return { ...question, image_url: signed?.signedUrl ?? null };
+          const imageUrl = question.image_url ? (await supabase.storage.from("question-images").createSignedUrl(question.image_url, 3600)).data?.signedUrl ?? null : null;
+          const choiceImages = await Promise.all((question.choice_images ?? []).map(async (path) => path ? (await supabase.storage.from("question-images").createSignedUrl(path, 3600)).data?.signedUrl ?? null : null));
+          return { ...question, image_url: imageUrl, choice_images: choiceImages };
         }));
         setQuestions(signedQuestions);
       }
@@ -101,7 +102,7 @@ export default function ExamResults({ summary, onBack }: { summary: ExamSummary;
               <p><MathText value={question.prompt} /></p>
               {question.image_url && <img className="bb-question-image" src={question.image_url} alt="Savolga tegishli rasm yoki grafik" />}
               {question.prompt_uz && <details className="bb-translation"><summary>O‘zbekcha tarjimani ko‘rish</summary><p><MathText value={question.prompt_uz} /></p></details>}
-              <div className="bb-review-correct"><b>To‘g‘ri javob:</b> <MathText value={correct} /></div>
+              <div className="bb-review-correct"><b>To‘g‘ri javob:</b> <MathText value={correct} />{question.choice_images?.[question.answer_index] && <img className="bb-choice-image" src={question.choice_images[question.answer_index] ?? ""} alt="To‘g‘ri javob rasmi" />}</div>
               <p><b>Sizning javobingiz:</b> <MathText value={selected} /> {question.is_correct ? "✓" : "·"}</p>
               {question.explanation && <div className="bb-ai-explanation"><b>Admin izohi:</b><br /><MathText value={question.explanation} /></div>}
               {aiExplanations[question.question_id] ? (

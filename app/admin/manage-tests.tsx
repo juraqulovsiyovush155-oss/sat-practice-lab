@@ -23,6 +23,7 @@ type QuestionRecord = {
   position: number;
   topic: string;
   image_url: string | null;
+  choice_images: (string | null)[] | null;
   prompt_uz: string | null;
   choices_uz: string[] | null;
 };
@@ -36,6 +37,9 @@ type EditorValues = {
   imageFile: File | null;
   imagePath: string | null;
   imagePreview: string | null;
+  choiceImageFiles: (File | null)[];
+  choiceImagePaths: (string | null)[];
+  choiceImagePreviews: (string | null)[];
 };
 type ImportedQuestion = {
   section: "math" | "reading_writing";
@@ -50,6 +54,9 @@ type ImportedQuestion = {
   has_figure?: boolean;
   imageFile?: File | null;
   imagePreview?: string | null;
+  choiceImageFiles?: (File | null)[];
+  choiceImagePaths?: (string | null)[];
+  choiceImagePreviews?: (string | null)[];
 };
 
 const emptyEditor: EditorValues = {
@@ -62,13 +69,16 @@ const emptyEditor: EditorValues = {
   imageFile: null,
   imagePath: null,
   imagePreview: null,
+  choiceImageFiles: [null, null, null, null],
+  choiceImagePaths: [null, null, null, null],
+  choiceImagePreviews: [null, null, null, null],
 };
 const letters = ["A", "B", "C", "D"];
-const VISION_CHUNK_PAGES = 4;
-const VISION_CHUNK_STEP = 3;
+const VISION_CHUNK_PAGES = 2;
+const VISION_CHUNK_STEP = 2;
 const VISION_CHUNK_BYTES = 450_000;
 const MAX_VISION_PAGES = 48;
-const VISION_CONCURRENCY = 3;
+const VISION_CONCURRENCY = 1;
 const sortQuestions = (questions: QuestionRecord[]) => [...questions].sort((left, right) => {
   const sectionOrder = (section: QuestionRecord["section"]) => section === "reading_writing" ? 0 : 1;
   return sectionOrder(left.section) - sectionOrder(right.section)
@@ -76,6 +86,16 @@ const sortQuestions = (questions: QuestionRecord[]) => [...questions].sort((left
     || left.position - right.position;
 });
 
+type ImportReview = {
+  index: number;
+  status: "ok" | "needs_review" | "duplicate";
+  issues: string[];
+  duplicateOf: number | null;
+  suggestedPrompt: string | null;
+  suggestedChoices: string[] | null;
+  suggestedAnswerIndex: number | null;
+  suggestedExplanation: string | null;
+};
 type PdfImportResponse = {
   error?: string;
   needsVision?: boolean;
@@ -92,7 +112,7 @@ async function readPdfImportResponse(response: Response): Promise<PdfImportRespo
   } catch {
     if (response.status === 413) throw new Error("PDF server limitidan katta. Faylni kichikroq yoki siqilgan PDF qilib yuklang.");
     if (response.status === 504 || response.status === 502) throw new Error("PDF tahlili server vaqt chegarasiga yetdi. Skaner PDF’ni kichikroq bo‘laklarda qayta urinib ko‘ring.");
-    throw new Error(`PDF serveridan JSON javobi kelmadi (HTTP ${response.status}). Sahifani yangilab, qayta urinib ko‘ring.`);
+    throw new Error(`PDF serveri JSON javob qaytarmadi (HTTP ${response.status}). Sahifani yangilab, qayta urinib ko‘ring.`);
   }
   if (!response.ok) throw new Error(result.error || `PDF tahlilida server xatosi (HTTP ${response.status}).`);
   return result;
@@ -132,9 +152,29 @@ async function splitPdfForBrowser(file: File) {
   return chunks;
 }
 
+async function readQuestionRecords(client: ReturnType<typeof createClient>, testId: string) {
+  const withChoiceImages = await client.from("questions")
+    .select("id,prompt,choices,section,module_number,position,topic,image_url,prompt_uz,choices_uz,choice_images")
+    .eq("test_id", testId)
+    .order("section", { ascending: true })
+    .order("module_number", { ascending: true })
+    .order("position", { ascending: true });
+  if (withChoiceImages.error && (withChoiceImages.error.code === "42703" || withChoiceImages.error.code === "PGRST204")) {
+    const fallback = await client.from("questions")
+      .select("id,prompt,choices,section,module_number,position,topic,image_url,prompt_uz,choices_uz")
+      .eq("test_id", testId)
+      .order("section", { ascending: true })
+      .order("module_number", { ascending: true })
+      .order("position", { ascending: true });
+    return { data: ((fallback.data ?? []).map((question) => ({ ...question, choice_images: null })) as QuestionRecord[]), error: fallback.error, choiceImagesAvailable: false };
+  }
+  return { data: (withChoiceImages.data ?? []) as QuestionRecord[], error: withChoiceImages.error, choiceImagesAvailable: true };
+}
+
 export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const [selectedTestId, setSelectedTestId] = useState(tests[0]?.id ?? "");
   const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [choiceImagesAvailable, setChoiceImagesAvailable] = useState(true);
   const [draftSection, setDraftSection] = useState<"math" | "reading_writing">(tests[0]?.section ?? "math");
   const [draftModule, setDraftModule] = useState(1);
   const [editor, setEditor] = useState<EditorValues>(emptyEditor);
@@ -148,6 +188,8 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [importCandidates, setImportCandidates] = useState<ImportedQuestion[]>([]);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  const [importReviews, setImportReviews] = useState<ImportReview[]>([]);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [editingImportIndex, setEditingImportIndex] = useState<number | null>(null);
   const supabase = useMemo(() => createClient(), []);
   const knownTestIds = useRef(new Set(tests.map((test) => test.id)));
@@ -165,6 +207,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       setError("");
       setImportCandidates([]);
       setImportWarnings([]);
+      setImportReviews([]);
       setEditingImportIndex(null);
       setPdfFile(null);
       return;
@@ -187,13 +230,9 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       }
       setLoading(true);
       setError("");
-      const { data, error: questionsError } = await supabase
-        .from("questions")
-        .select("id,prompt,choices,section,module_number,position,topic,image_url,prompt_uz,choices_uz")
-        .eq("test_id", selectedTestId)
-        .order("section", { ascending: true })
-        .order("module_number", { ascending: true })
-        .order("position", { ascending: true });
+      const questionResult = await readQuestionRecords(supabase, selectedTestId);
+      const { data, error: questionsError } = questionResult;
+      setChoiceImagesAvailable(questionResult.choiceImagesAvailable);
       if (cancelled) return;
       if (questionsError) {
         setError(questionsError.message);
@@ -249,6 +288,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     setMessage("");
     setImportCandidates([]);
     setImportWarnings([]);
+    setImportReviews([]);
     setEditingImportIndex(null);
     try {
       const form = new FormData();
@@ -287,7 +327,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
 
         const seen = new Set<string>();
         importedQuestions = chunkResults.flatMap((result) => result.questions ?? []).filter((question) => {
-          const key = question.prompt.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 180);
+          const key = question.section + ":" + question.prompt.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 180);
           if (!key || seen.has(key)) return false;
           seen.add(key);
           return true;
@@ -304,6 +344,44 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     } finally {
       setPdfBusy(false);
     }
+  }
+
+  async function reviewImportedQuestions() {
+    if (!importCandidates.length || reviewBusy) return;
+    setReviewBusy(true);
+    setError("");
+    setImportReviews([]);
+    try {
+      const reviews: ImportReview[] = [];
+      for (let offset = 0; offset < importCandidates.length; offset += 10) {
+        const batch = importCandidates.slice(offset, offset + 10);
+        const response = await fetch("/api/admin/review-import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ questions: batch.map(({ prompt, choices, answerIndex, explanation }) => ({ prompt, choices, answerIndex, explanation })) }),
+        });
+        const body = await response.json().catch(() => null) as { error?: string; reviews?: ImportReview[] } | null;
+        if (!response.ok) throw new Error(body?.error || "AI tekshiruv so‘rovi bajarilmadi.");
+        reviews.push(...(body?.reviews ?? []).map((item) => ({ ...item, index: item.index + offset, duplicateOf: item.duplicateOf === null ? null : item.duplicateOf + offset })));
+      }
+      setImportReviews(reviews);
+      const issueCount = reviews.filter((item) => item.status !== "ok" || item.issues.length).length;
+      setMessage(issueCount ? "AI " + issueCount + " ta savolni tekshirishni tavsiya qildi. Tuzatishlarni bittalab ko‘rib chiqing." : "AI tekshiruvi tugadi. Aniq xato topilmadi; baribir manba bilan solishtirib chiqing.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI savollarni tekshirmadi.");
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
+  function applyImportReview(review: ImportReview) {
+    const changes: Partial<ImportedQuestion> = {};
+    if (review.suggestedPrompt) changes.prompt = review.suggestedPrompt;
+    if (review.suggestedChoices?.length === 4) changes.choices = review.suggestedChoices as ImportedQuestion["choices"];
+    if (review.suggestedAnswerIndex !== null) changes.answerIndex = review.suggestedAnswerIndex;
+    if (review.suggestedExplanation) changes.explanation = review.suggestedExplanation;
+    setImportCandidates((items) => items.map((item, index) => index === review.index ? { ...item, ...changes } : item));
+    setImportReviews((items) => items.filter((item) => item.index !== review.index));
   }
 
   async function saveImportedQuestions() {
@@ -330,14 +408,23 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         prompt_uz: question.prompt_uz?.trim() || null,
         choices_uz: question.choices_uz?.every((choice) => choice.trim()) ? question.choices_uz.map((choice) => choice.trim()) : null,
         image_url: null as string | null,
+        ...(choiceImagesAvailable ? { choice_images: (question.choiceImagePaths ?? [null, null, null, null]).slice(0, 4) } : {}),
         module_number: selectedTest.kind === "topic" ? 1 : question.module_number,
         position,
       };
     });
     try {
       for (let index = 0; index < rows.length; index++) {
-        const imageFile = importCandidates[index].imageFile;
-        if (imageFile) rows[index].image_url = await uploadQuestionImage(imageFile, selectedTest.id, rows[index].id);
+        const candidate = importCandidates[index];
+        const row = rows[index];
+        if (!candidate || !row) continue;
+        const imageFile = candidate.imageFile;
+        if (imageFile) row.image_url = await uploadQuestionImage(imageFile, selectedTest.id, row.id);
+        const choiceFiles = candidate.choiceImageFiles ?? [];
+        for (let choiceIndex = 0; choiceIndex < 4; choiceIndex++) {
+          const choiceFile = choiceFiles[choiceIndex];
+          if (choiceFile && row.choice_images) row.choice_images[choiceIndex] = await uploadQuestionImage(choiceFile, selectedTest.id, row.id);
+        }
       }
       const { error: insertError } = await supabase.from("questions").insert(rows);
       if (insertError) throw insertError;
@@ -353,12 +440,9 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         await supabase.from("questions").delete().in("id", rows.map((row) => row.id));
         throw keyError;
       }
-      const { data, error: reloadError } = await supabase.from("questions")
-        .select("id,prompt,choices,section,module_number,position,topic,image_url,prompt_uz,choices_uz")
-        .eq("test_id", selectedTest.id)
-        .order("section", { ascending: true })
-        .order("module_number", { ascending: true })
-        .order("position", { ascending: true });
+      const questionResult = await readQuestionRecords(supabase, selectedTest.id);
+      const { data, error: reloadError } = questionResult;
+      setChoiceImagesAvailable(questionResult.choiceImagesAvailable);
       if (reloadError) throw reloadError;
       setQuestions(sortQuestions((data ?? []) as QuestionRecord[]));
       setImportCandidates([]);
@@ -405,6 +489,10 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       return;
     }
 
+    if (!choiceImagesAvailable && editor.choiceImageFiles.some(Boolean)) {
+      setError("Javob varianti rasmlarini saqlash uchun Supabase’dagi 0006_choice_images.sql migrationni ishga tushiring.");
+      return;
+    }
     setSaving(true);
     setError("");
     setMessage("");
@@ -419,6 +507,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
             prompt_uz: promptUz || null,
             choices_uz: choicesUz.every(Boolean) ? choicesUz : null,
             image_url: editor.imagePath,
+            ...(choiceImagesAvailable ? { choice_images: editor.choiceImagePaths } : {}),
             section,
             module_number: moduleNumber,
           })
@@ -453,6 +542,15 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         if (imageError) throw imageError;
       }
 
+      if (questionId && editor.choiceImageFiles.some(Boolean)) {
+        const paths = [...editor.choiceImagePaths];
+        for (let choiceIndex = 0; choiceIndex < 4; choiceIndex++) {
+          const file = editor.choiceImageFiles[choiceIndex];
+          if (file) paths[choiceIndex] = await uploadQuestionImage(file, selectedTest.id, questionId);
+        }
+        const { error: choiceImageError } = await supabase.from("questions").update({ choice_images: paths }).eq("id", questionId);
+        if (choiceImageError) throw choiceImageError;
+      }
       const { error: keyError } = await supabase.from("question_keys").upsert(
         {
           question_id: questionId,
@@ -470,13 +568,9 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
 
       setMessage(editingQuestionId ? "Savol yangilandi." : "Savol testga qo‘shildi.");
       resetEditor();
-      const { data, error: reloadError } = await supabase
-        .from("questions")
-        .select("id,prompt,choices,section,module_number,position,topic,image_url,prompt_uz,choices_uz")
-        .eq("test_id", selectedTest.id)
-        .order("section", { ascending: true })
-        .order("module_number", { ascending: true })
-        .order("position", { ascending: true });
+      const questionResult = await readQuestionRecords(supabase, selectedTest.id);
+      const { data, error: reloadError } = questionResult;
+      setChoiceImagesAvailable(questionResult.choiceImagesAvailable);
       if (reloadError) throw reloadError;
       setQuestions(sortQuestions((data ?? []) as QuestionRecord[]));
     } catch (caught) {
@@ -508,6 +602,12 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     const signedImage = question.image_url
       ? await supabase.storage.from("question-images").createSignedUrl(question.image_url, 3600)
       : null;
+    const choicePaths = question.choice_images ?? [null, null, null, null];
+    const choicePreviews = await Promise.all(choicePaths.map(async (path) => {
+      if (!path) return null;
+      const { data: signed } = await supabase.storage.from("question-images").createSignedUrl(path, 3600);
+      return signed?.signedUrl ?? null;
+    }));
     setEditor({
       prompt: question.prompt,
       promptUz: question.prompt_uz ?? "",
@@ -518,6 +618,9 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       imageFile: null,
       imagePath: question.image_url,
       imagePreview: signedImage?.data?.signedUrl ?? null,
+      choiceImageFiles: [null, null, null, null],
+      choiceImagePaths: choicePaths,
+      choiceImagePreviews: choicePreviews,
     });
     document.getElementById("question-editor")?.scrollIntoView({ behavior: "smooth" });
   }
@@ -583,6 +686,20 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       );
       if (missing.length) {
         setError("E’lon qilishdan oldin har bir SAT moduliga kamida bitta savol qo‘shing: " + missing.map((part) => part.label).join(", "));
+        return;
+      }
+      const expectedCounts = [
+        { section: "reading_writing", module: 1, count: 27 },
+        { section: "reading_writing", module: 2, count: 27 },
+        { section: "math", module: 1, count: 22 },
+        { section: "math", module: 2, count: 22 },
+      ];
+      const countProblem = expectedCounts.map((part) => {
+        const actual = questions.filter((question) => question.section === part.section && question.module_number === part.module).length;
+        return actual === part.count ? null : part.section + " · Module " + part.module + ": " + actual + "/" + part.count;
+      }).filter(Boolean);
+      if (countProblem.length) {
+        setError("SAT mock uchun standart sonlar kerak: Reading and Writing 27+27, Math 22+22. " + countProblem.join("; "));
         return;
       }
     }
@@ -697,6 +814,12 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                 <div className="pdf-import-preview">
                   <div className="row"><h4>Tekshirish uchun ajratilgan savollar ({importCandidates.length})</h4><button type="button" className="btn secondary" onClick={() => setImportCandidates([])}>Bekor qilish</button></div>
                   {importWarnings.length > 0 && <div className="notice"><strong>AI ogohlantirishi:</strong> {importWarnings.join("; ")}</div>}
+                  <button type="button" className="btn secondary" disabled={reviewBusy || saving} onClick={() => void reviewImportedQuestions()}>{reviewBusy ? "AI savollarni tekshirmoqda…" : "AI bilan xatolarni tekshirish"}</button>
+                  {importReviews.length > 0 && <div className="notice"><strong>AI tekshiruv tavsiyalari:</strong><ul>{importReviews.map((review) => {
+                    const candidate = importCandidates[review.index];
+                    const hasEdits = Boolean(review.suggestedPrompt || review.suggestedChoices || review.suggestedAnswerIndex !== null || review.suggestedExplanation);
+                    return <li key={review.index}>Savol {review.index + 1}: {review.status === "duplicate" ? "ehtimol takroriy" : review.status === "needs_review" ? "qayta tekshiring" : "format/javob ko‘rildi"}. {review.issues.join("; ")}{review.duplicateOf !== null ? " (o‘xshashi " + (review.duplicateOf + 1) + "-savol)" : ""}{hasEdits && candidate && <button type="button" className="btn secondary" onClick={() => applyImportReview(review)}>AI taklifini ko‘rib qo‘llash</button>}</li>;
+                  })}</ul><small>AI hech narsani o‘zi o‘zgartirmaydi yoki o‘chirmaydi. Taklifni siz tanlab qo‘llang; takrorni alohida olib tashlang.</small></div>}
                   <ol>
                     {importCandidates.map((candidate, index) => (
                       <li key={`${candidate.section}-${candidate.module_number}-${index}`}>
@@ -730,6 +853,23 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                   <MathInput id="pdf-edit-prompt" label="Savol matni" multiline rows={4} value={candidate.prompt} onChange={(prompt) => updateCandidate({ prompt })} />
                   <MathInput id="pdf-edit-prompt-uz" label="O‘zbekcha tarjima (ixtiyoriy)" multiline rows={3} value={candidate.prompt_uz ?? ""} onChange={(prompt_uz) => updateCandidate({ prompt_uz })} />
                   <div className="cards">{candidate.choices.map((choice, choiceIndex) => <MathInput key={choiceIndex} id={`pdf-edit-choice-${choiceIndex}`} label={`Javob ${letters[choiceIndex]}`} value={choice} onChange={(next) => updateCandidate({ choices: candidate.choices.map((option, index) => index === choiceIndex ? next : option) as ImportedQuestion["choices"] })} />)}</div>
+                  <div className="cards">{candidate.choices.map((_, choiceIndex) => <div key={"pdf-choice-image-" + choiceIndex}>
+                    <label htmlFor={"pdf-edit-choice-image-" + choiceIndex}>Javob {letters[choiceIndex]} rasmi (ixtiyoriy)</label>
+                    <input id={"pdf-edit-choice-image-" + choiceIndex} className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      if (!file) return;
+                      imageFileChange(file, (imageFile, imagePreview) => updateCandidate({
+                        choiceImageFiles: (candidate.choiceImageFiles ?? [null, null, null, null]).map((item, index) => index === choiceIndex ? imageFile : item),
+                        choiceImagePaths: (candidate.choiceImagePaths ?? [null, null, null, null]).map((item, index) => index === choiceIndex ? null : item),
+                        choiceImagePreviews: (candidate.choiceImagePreviews ?? [null, null, null, null]).map((item, index) => index === choiceIndex ? imagePreview : item),
+                      }));
+                    }} />
+                    {candidate.choiceImagePreviews?.[choiceIndex] && <div><img className="bb-choice-image-preview" src={candidate.choiceImagePreviews[choiceIndex] ?? ""} alt={"Javob " + letters[choiceIndex] + " rasmi"} /><button type="button" className="btn secondary" onClick={() => updateCandidate({
+                      choiceImageFiles: (candidate.choiceImageFiles ?? [null, null, null, null]).map((item, index) => index === choiceIndex ? null : item),
+                      choiceImagePaths: (candidate.choiceImagePaths ?? [null, null, null, null]).map((item, index) => index === choiceIndex ? null : item),
+                      choiceImagePreviews: (candidate.choiceImagePreviews ?? [null, null, null, null]).map((item, index) => index === choiceIndex ? null : item),
+                    })}>Rasmni olib tashlash</button></div>}
+                  </div>)}</div>
                   <div className="cards">{(candidate.choices_uz ?? ["", "", "", ""]).map((choice, choiceIndex) => <MathInput key={choiceIndex} id={`pdf-edit-choice-uz-${choiceIndex}`} label={`Tarjima ${letters[choiceIndex]}`} value={choice} onChange={(next) => updateCandidate({ choices_uz: (candidate.choices_uz ?? ["", "", "", ""]).map((option, index) => index === choiceIndex ? next : option) as ImportedQuestion["choices_uz"] })} />)}</div>
                   <label htmlFor="pdf-edit-image">Savol chizmasi yoki rasmi (PNG/JPG/WEBP, 5 MB gacha)</label>
                   <input id="pdf-edit-image" className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => imageFileChange(event.target.files?.[0] ?? null, (imageFile, imagePreview) => updateCandidate({ imageFile, imagePreview }))} />
@@ -770,6 +910,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
               ) : (
                 <p className="notice">{selectedTest.section === "math" ? "Math · Module 1" : "Reading and Writing · Module 1"}</p>
               )}
+              {!choiceImagesAvailable && <p className="notice">Javob variantlari rasmini yoqish uchun Supabase SQL Editor’da 0006_choice_images.sql migrationni ishga tushiring. Boshqa savol maydonlari ishlayveradi.</p>}
               <p className="notice">Math savolida ildiz, kasr, daraja va boshqa belgilar pastdagi ∑ Formula tugmalarida doim ochiq. Tugmani bosib, qavs ichiga qiymatni yozing — ko‘rinishini darhol tekshirishingiz mumkin.</p>
               <MathInput
                 id="question-prompt"
@@ -792,6 +933,14 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                       value={choice}
                       onChange={(value) => updateChoice(index, value)}
                     />
+                    <label htmlFor={"choice-image-" + index}>Javob {letters[index]} rasmi (ixtiyoriy)</label>
+                    <input id={"choice-image-" + index} className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      if (!file) return;
+                      imageFileChange(file, (nextFile, preview) => setEditor((current) => ({ ...current, choiceImageFiles: current.choiceImageFiles.map((item, i) => i === index ? nextFile : item), choiceImagePaths: current.choiceImagePaths.map((item, i) => i === index ? null : item), choiceImagePreviews: current.choiceImagePreviews.map((item, i) => i === index ? preview : item) })));
+                    }} />
+                    {editor.choiceImagePreviews[index] && <div><img className="bb-choice-image-preview" src={editor.choiceImagePreviews[index] ?? ""} alt={"Javob " + letters[index] + " rasmi"} /><button type="button" className="btn secondary" onClick={() => setEditor((current) => ({ ...current, choiceImageFiles: current.choiceImageFiles.map((item, i) => i === index ? null : item), choiceImagePaths: current.choiceImagePaths.map((item, i) => i === index ? null : item), choiceImagePreviews: current.choiceImagePreviews.map((item, i) => i === index ? null : item) }))}>Rasmni olib tashlash</button></div>}
+
                   </div>
                 ))}
               </div>

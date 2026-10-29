@@ -7,7 +7,7 @@ import SatMockPlayer from "./sat-mock-player";
 import DesmosCalculator from "@/components/desmos-calculator";
 
 type Test={id:string;title:string;kind:"topic"|"mock";section:string|null;topic:string|null;duration_seconds:number};
-type Question={id:string;section:string;module_number:number;topic:string;prompt:string;choices:string[];position:number;image_url?:string|null;prompt_uz?:string|null;choices_uz?:string[]|null};
+type Question={id:string;section:string;module_number:number;topic:string;prompt:string;choices:string[];position:number;image_url?:string|null;choice_images?:(string|null)[]|null;prompt_uz?:string|null;choices_uz?:string[]|null};
 type Overlay="directions"|"questions"|"review"|"reference"|"help"|"shortcuts"|null;
 
 export default function TestList({tests}:{tests:Test[]}) {
@@ -47,7 +47,7 @@ export default function TestList({tests}:{tests:Test[]}) {
       const {data,error}=await supabase.rpc("get_test_questions",{p_test_id:test.id});
       if(error)throw error;
       if(!data?.length){setMessage("Bu testda savollar yo‘q.");return}
-      const questions=await Promise.all((data as Question[]).map(async q=>{if(!q.image_url)return q;const {data:signed}=await supabase.storage.from("question-images").createSignedUrl(q.image_url,3600);return {...q,image_url:signed?.signedUrl??null}}));
+      const questions=await Promise.all((data as Question[]).map(async q=>{const imageUrl=q.image_url?(await supabase.storage.from("question-images").createSignedUrl(q.image_url,3600)).data?.signedUrl??null:null;const choiceImages=await Promise.all((q.choice_images??[]).map(async(path)=>path?(await supabase.storage.from("question-images").createSignedUrl(path,3600)).data?.signedUrl??null:null));return {...q,image_url:imageUrl,choice_images:choiceImages}}));
       setItems(questions);setActive(test);setIndex(0);setAnswers({});setFlags({});setEliminated({});
       setSeconds(test.duration_seconds);setDirectionsSeen(false);setOverlay("directions");
     }catch(e){setMessage(e instanceof Error?e.message:"Testni yuklab bo‘lmadi.")}
@@ -89,7 +89,7 @@ export default function TestList({tests}:{tests:Test[]}) {
           const chosen=answers[q.id]===i, crossed=(eliminated[q.id]??[]).includes(i);
           return <div className={`bb-choice-wrap ${crossed?"crossed":""}`} key={i}>
             <button className={`bb-choice ${chosen?"selected":""} ${crossed?"eliminated":""}`} onClick={()=>crossMode?toggleEliminate(i):(!crossed&&setAnswers(a=>({...a,[q.id]:i})))}>
-              <span className="bb-letter">{String.fromCharCode(65+i)}</span><MathText value={choice}/>
+              <span className="bb-letter">{String.fromCharCode(65+i)}</span><MathText value={choice}/>{q.choice_images?.[i]&&<img className="bb-choice-image" src={q.choice_images[i]??""} alt={"Javob "+String.fromCharCode(65+i)+" rasmi"}/>}
             </button>
             <button className="bb-choice-x" aria-label={` ${String.fromCharCode(65+i)} variantini chiqarib tashlash`} onClick={()=>toggleEliminate(i)}>{crossed?"↶":String.fromCharCode(65+i)}</button>
           </div>

@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import DesmosCalculator from "@/components/desmos-calculator";
 
 type Test = { id: string; title: string; kind: "topic" | "mock"; section: string | null; topic: string | null; duration_seconds: number };
-type Question = { id: string; section: "math" | "reading_writing"; module_number: number; topic: string; prompt: string; choices: string[]; position: number; image_url?: string | null; prompt_uz?: string | null; choices_uz?: string[] | null };
+type Question = { id: string; section: "math" | "reading_writing"; module_number: number; topic: string; prompt: string; choices: string[]; position: number; image_url?: string | null; choice_images?: (string | null)[] | null; prompt_uz?: string | null; choices_uz?: string[] | null };
 type Overlay = "directions" | "questions" | "review" | "reference" | "help" | "shortcuts" | null;
 
 const modules = [
@@ -65,9 +65,9 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
         setLoadError(rpcError.message);
       } else {
         const questions = await Promise.all(((data ?? []) as Question[]).map(async (question) => {
-          if (!question.image_url) return question;
-          const { data: signed } = await supabase.storage.from("question-images").createSignedUrl(question.image_url, 3600);
-          return { ...question, image_url: signed?.signedUrl ?? null };
+          const imageUrl = question.image_url ? (await supabase.storage.from("question-images").createSignedUrl(question.image_url, 3600)).data?.signedUrl ?? null : null;
+          const choiceImages = await Promise.all((question.choice_images ?? []).map(async (path) => path ? (await supabase.storage.from("question-images").createSignedUrl(path, 3600)).data?.signedUrl ?? null : null));
+          return { ...question, image_url: imageUrl, choice_images: choiceImages };
         }));
         const missing = modules.filter((part) => !questions.some((q) => q.section === part.section && q.module_number === part.module));
         if (missing.length) {
@@ -257,7 +257,7 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
               const crossed = (eliminated[current.id] ?? []).includes(choiceIndex);
               return <div className={"bb-choice-wrap " + (crossed ? "crossed" : "")} key={choiceIndex}>
                 <button type="button" className={"bb-choice " + (chosen ? "selected " : "") + (crossed ? "eliminated" : "")} onClick={() => crossMode ? setEliminated((old) => ({ ...old, [current.id]: crossed ? (old[current.id] ?? []).filter((i) => i !== choiceIndex) : [...(old[current.id] ?? []), choiceIndex] })) : (!crossed && setAnswers((old) => ({ ...old, [current.id]: choiceIndex })))}>
-                  <span className="bb-letter">{String.fromCharCode(65 + choiceIndex)}</span><MathText value={choice} />
+                  <span className="bb-letter">{String.fromCharCode(65 + choiceIndex)}</span><MathText value={choice} />{current.choice_images?.[choiceIndex] && <img className="bb-choice-image" src={current.choice_images[choiceIndex] ?? ""} alt={"Javob " + String.fromCharCode(65 + choiceIndex) + " rasmi"} />}
                 </button>
                 <button type="button" className="bb-choice-x" aria-label={crossed ? "Variantni qayta tiklash" : "Variantni chiqarib tashlash"} onClick={() => setEliminated((old) => ({ ...old, [current.id]: crossed ? (old[current.id] ?? []).filter((i) => i !== choiceIndex) : [...(old[current.id] ?? []), choiceIndex] }))}>{crossed ? "↶" : String.fromCharCode(65 + choiceIndex)}</button>
               </div>;

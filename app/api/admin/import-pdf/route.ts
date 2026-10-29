@@ -11,8 +11,8 @@ const MAX_PDF_BYTES = 3.5 * 1024 * 1024;
 const MAX_QUESTIONS = 100;
 const MAX_EXTRACTED_CHARS = 360_000;
 const MAX_VISION_PAGES = 48;
-const VISION_CHUNK_PAGES = 4;
-const VISION_CONCURRENCY = 3;
+const VISION_CHUNK_PAGES = 2;
+const VISION_CONCURRENCY = 1;
 const MAX_VISION_CHUNK_BYTES = 450_000;
 type ImportedQuestion = {
   section: "math" | "reading_writing";
@@ -146,7 +146,19 @@ function normalizeQuestions(value: unknown, selectedTest: { kind: string; sectio
     });
   }
   if (!questions.length) throw new Error("PDF ichidan javob variantlari bilan yaroqli savollar olinmadi. Aniqroq PDF yoki javoblar kaliti bor faylni sinang.");
-  return { questions, warnings };
+  if (selectedTest.kind === "mock") {
+    const sectionCounts = new Map<string, number>();
+    for (const question of questions) {
+      const sectionIndex = sectionCounts.get(question.section) ?? 0;
+      question.module_number = sectionIndex < (question.section === "math" ? 22 : 27) ? 1 : 2;
+      sectionCounts.set(question.section, sectionIndex + 1);
+    }
+    const mathCount = sectionCounts.get("math") ?? 0;
+    const rwCount = sectionCounts.get("reading_writing") ?? 0;
+    if (mathCount > 44) warnings.push("PDF’da " + mathCount + " ta Math savoli topildi; SAT mock uchun 44 ta (har modulda 22 ta) kerak. Ortiqchasini ko‘rib olib tashlang.");
+    if (rwCount > 54) warnings.push("PDF’da " + rwCount + " ta Reading and Writing savoli topildi; odatiy mock uchun 54 ta kerak. Ortiqchasini ko‘rib olib tashlang.");
+  }
+  return { questions, warnings: [...new Set(warnings)].slice(0, 30) };
 }
 
 async function handlePost(request: Request) {
@@ -190,7 +202,7 @@ async function handlePost(request: Request) {
 
   const sectionRule = selectedTest.kind === "topic"
     ? `Bu mavzuli testning bo‘limi faqat ${selectedTest.section === "reading_writing" ? "reading_writing" : "math"}; barcha savollar uchun module_number=1 qo‘y.`
-    : "Tanlangan test: " + selectedTest.title + ". PDF sarlavhalaridan SAT bo‘limini (reading_writing yoki math) va modulni (1 yoki 2) ajrat. Bitta bo‘limli PDF bo‘lsa, savol mazmuniga qarab bo‘limni tanla.";
+    : "Tanlangan test: " + selectedTest.title + ". Section 1 doim Reading and Writing, Section 2 doim Math. Savollarning matni va variantlarini manbaga aynan mos saqla; modul raqamini server savollar ketma-ketligidan standart 27+27 English va 22+22 Math qilib hisoblaydi.";
   const instructions = [
     "Javob obyektida har bir savol uchun prompt_uz, choices_uz (aniq to‘rtta tarjima) va has_figure maydonlarini ham qaytar. Asl matn inglizcha bo‘lsin, tarjima o‘zbekcha. Variantlardan A), B), C), D) harflarini olib tashla.",
     "Matematik LaTeX ifodalarini doim \\( ... \\) delimitrlari ichida yoz; ichki chizma yoki diagramma bo‘lsa has_figure=true qil va ko‘rinadigan qiymatlarni promptda saqla.",
@@ -286,7 +298,7 @@ export async function POST(request: Request) {
     return await handlePost(request);
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "PDF serverda tahlil qilinmadi.";
-    console.error("[admin/import-pdf]", message.slice(0, 500));
+    console.error("[admin/import-pdf]", caught);
     return Response.json({ error: "PDF serverda tahlil qilinmadi. Faylni kichikroq bo‘laklarda qayta yuklang." }, { status: 500 });
   }
 }

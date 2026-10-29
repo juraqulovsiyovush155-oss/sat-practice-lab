@@ -7,7 +7,7 @@ import type { MathfieldElement } from "mathlive";
 
 type MathTextProps = { value: string; className?: string };
 
-const mathToken = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g;
+const mathToken = /(\[\[table\]\][\s\S]*?\[\[\/table\]\]|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g;
 const bareMathToken = /(?:\\(?:d?frac|tfrac)\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\{(?:[^{}]|\{[^{}]*\})*\}|\\sqrt(?:\[[^\]]+\])?\s*\{(?:[^{}]|\{[^{}]*\})*\}|\\(?:pi|theta|alpha|beta|gamma|delta|leq|geq|neq|times|cdot|pm|infty|log|ln|sin|cos|tan)\b|(?<![\p{L}\p{N}])(?:[+-]?\d+(?:\.\d+)?[a-zA-Z](?:\^\d+)?|[a-zA-Z](?:\^\d+)?)(?:\s*[+\-=<>≤≥]\s*(?:[+-]?\d+(?:\.\d+)?[a-zA-Z]?(?:\^\d+)?|[a-zA-Z](?:\^\d+)?|\d+(?:\.\d+)?)){1,5})/gu;
 
 function renderFormula(part: string) {
@@ -23,6 +23,10 @@ export function MathText({ value, className }: MathTextProps) {
   return (
     <span className={className}>
       {parts.map((part, index) => {
+        if (part.startsWith("[[table]]") && part.endsWith("[[/table]]")) {
+          const rows = part.slice(9, -10).trim().split(/\r?\n/).filter(Boolean).map((row) => row.split("|").map((cell) => cell.trim()));
+          return <span key={index} className="math-data-table"><table><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => rowIndex === 0 ? <th key={cellIndex}><MathText value={cell} /></th> : <td key={cellIndex}><MathText value={cell} /></td>)}</tr>)}</tbody></table></span>;
+        }
         const isParenMath = part.startsWith("\\(") && part.endsWith("\\)");
         const isDisplayMath = part.startsWith("\\[") && part.endsWith("\\]");
         const isDoubleDollarMath = part.startsWith("$$") && part.endsWith("$$");
@@ -177,6 +181,7 @@ export function MathInput({
       </div>
       {showFormulas && (
         <div className="math-toolbar" aria-label="Formula belgilarini qo‘shish">
+          <button type="button" title="2×2 jadval qo‘shish" aria-label="Jadval qo‘shish" onClick={() => insertFormula("[[table]]\nUstun 1 | Ustun 2\nQiymat 1 | Qiymat 2\n[[/table]]", 9)}>Jadval</button>
           {formulas.map((formula) => (
             <button
               type="button"
@@ -190,28 +195,16 @@ export function MathInput({
           ))}
         </div>
       )}
-      {multiline ? (
-        <textarea
-          ref={fieldRef as React.RefObject<HTMLTextAreaElement>}
-          id={id}
-          className="field"
-          rows={rows}
-          required={required}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-        />
-      ) : (
-        <input
-          ref={fieldRef as React.RefObject<HTMLInputElement>}
-          id={id}
-          className="field"
-          required={required}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-        />
-      )}
+      <textarea
+        ref={fieldRef as React.RefObject<HTMLTextAreaElement>}
+        id={id}
+        className="field"
+        rows={multiline ? rows : 2}
+        required={required}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
       <div className="math-input-help">To‘liq formula muharririda kasr, ildiz, daraja, tenglama, funksiya, matritsa va boshqa belgilarni vizual kiriting yoki LaTeX yozing.</div>
       {value.includes("\\(") || value.includes("\\[") || value.includes("$") ? (
         <div className="math-preview"><MathText value={value} /></div>

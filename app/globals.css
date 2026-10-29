@@ -340,3 +340,15 @@
   .hero-animated-words b{animation:word-cycle-static 9s linear infinite!important;transform:none!important}
   .hero-animated-words b:first-child{opacity:1}
 }
+
+/* Mobile auth hero: keep headline readable over the supplied image. */
+@media(max-width:540px){
+  .auth-visual-copy,.auth-visual-orbit{display:none!important}
+}
+.math-data-table{display:block;overflow-x:auto;margin:12px 0}
+.math-data-table table{border-collapse:collapse;min-width:250px;background:white}
+.math-data-table th,.math-data-table td{border:1px solid #aebbb0;padding:8px 12px;text-align:left}
+.math-data-table th{background:#eef6ee;color:#164f34;font-weight:800}
+
+.bb-choice-image{display:block;max-width:min(100%,560px);max-height:250px;object-fit:contain;margin:9px 0 4px}
+.bb-choice-image-preview{display:block;max-width:100%;max-height:220px;object-fit:contain;margin:8px 0;border:1px solid #dce6dd;border-radius:8px;background:white}
