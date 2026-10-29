@@ -130,7 +130,7 @@ begin
   from jsonb_array_elements(p_answers) a(item)
   join public.questions q on q.id = (a.item ->> 'question_id')::uuid and q.test_id = p_test_id
   join public.question_keys k on k.question_id = q.id
-  on conflict (attempt_id, question_id) do update
+  on conflict on constraint attempt_answers_pkey do update
     set selected_index = excluded.selected_index, is_correct = excluded.is_correct;
 
   -- Save omitted answers as unanswered so the review and denominator include every item.
