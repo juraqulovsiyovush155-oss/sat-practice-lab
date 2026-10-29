@@ -286,6 +286,21 @@
 /* Keep exam controls above platform overlays and reserve room for the finish action. */
 .bb-shell{z-index:2147483000;isolation:isolate}
 .bb-footer{position:relative;z-index:2;padding-right:max(clamp(18px,3vw,60px),env(safe-area-inset-right))}
+
+.bb-question-image{display:block;max-width:min(100%,900px);max-height:440px;object-fit:contain;margin:0 auto 24px;border:1px solid #d5d9d7;border-radius:8px;background:#fff}
+.bb-translation{margin:18px 0 24px;padding:12px 16px;border:1px solid #a9c9b5;border-radius:10px;background:#f4faf6;color:#202522}
+.bb-translation summary{cursor:pointer;font-weight:700;color:#176b43}
+.bb-translation ol{padding-left:28px;line-height:1.7}
+.bb-desmos{position:absolute;z-index:8;inset:120px 24px 90px auto;width:min(660px,calc(100vw - 48px));display:flex;flex-direction:column;overflow:hidden;border:1px solid #555;border-radius:10px;background:#fff;box-shadow:0 7px 25px #0004}
+.bb-desmos .bb-calc-head{flex:0 0 48px;align-items:center;gap:10px}
+.bb-desmos-tabs,.bb-desmos-actions{display:flex;align-items:center;gap:6px}
+.bb-desmos-tabs button{border:1px solid #aaa;border-radius:7px;background:#333;color:#fff;padding:6px 10px;font-weight:700}
+.bb-desmos-tabs button[aria-selected=true]{background:#176b43;border-color:#176b43}
+.bb-desmos-actions{margin-left:auto}
+.bb-desmos-actions a{color:#fff;font-size:13px;white-space:nowrap}
+.bb-desmos iframe{width:100%;flex:1;min-height:0;border:0;background:#fff}
+.bb-desmos small{padding:5px 10px;color:#555;background:#f5f5f5;font-size:11px}
+@media(max-width:700px){.bb-desmos{inset:118px 10px 78px;width:calc(100vw - 20px)}.bb-desmos .bb-calc-head{padding:8px;gap:4px}.bb-desmos-tabs button{padding:5px 8px;font-size:12px}.bb-desmos-actions a{font-size:11px}.bb-question-image{max-height:300px}}
 .bb-nav .bb-finish{background:#155d3b;box-shadow:0 6px 20px #155d3b35}
 .bb-error{padding:10px 12px;border:1px solid #e7a6a6;border-radius:9px;background:#fff3f2;color:#8b2525;font-size:13px}
 .bb-modal-actions .bb-primary:disabled{opacity:.55;cursor:wait}

@@ -16,6 +16,9 @@ type ReviewQuestion = {
   selected_index: number | null;
   is_correct: boolean;
   explanation: string;
+  image_url?: string | null;
+  prompt_uz?: string | null;
+  choices_uz?: string[] | null;
 };
 
 export type ExamSummary = {
@@ -24,6 +27,7 @@ export type ExamSummary = {
   correct: number;
   total: number;
   score: number;
+  scoreMax: number;
 };
 
 export default function ExamResults({ summary, onBack }: { summary: ExamSummary; onBack: () => void }) {
@@ -42,7 +46,14 @@ export default function ExamResults({ summary, onBack }: { summary: ExamSummary;
       });
       if (!active) return;
       if (reviewError) setError(reviewError.message);
-      else setQuestions((data ?? []) as ReviewQuestion[]);
+      else {
+        const signedQuestions = await Promise.all(((data ?? []) as ReviewQuestion[]).map(async (question) => {
+          if (!question.image_url) return question;
+          const { data: signed } = await supabase.storage.from("question-images").createSignedUrl(question.image_url, 3600);
+          return { ...question, image_url: signed?.signedUrl ?? null };
+        }));
+        setQuestions(signedQuestions);
+      }
       setLoading(false);
     }
     void loadReview();
@@ -75,7 +86,7 @@ export default function ExamResults({ summary, onBack }: { summary: ExamSummary;
         <button className="btn secondary" type="button" onClick={onBack}>Testlar ro‘yxatiga qaytish</button>
       </div>
       <section className="bb-result-score" aria-label="Taxminiy SAT balli">
-        <strong>{summary.score}</strong><span>/ 1600 · taxminiy SAT balli</span>
+        <strong>{summary.score}</strong><span>/ {summary.scoreMax} · taxminiy SAT balli</span>
       </section>
       <p className="bb-result-note">{summary.correct}/{summary.total} ta savol to‘g‘ri. Bu mashq uchun taxminiy natija; rasmiy College Board konvertatsiyasi emas.</p>
       {error && <p className="bb-error" role="alert">{error}</p>}
@@ -88,6 +99,8 @@ export default function ExamResults({ summary, onBack }: { summary: ExamSummary;
             <article className="bb-review-item" key={question.question_id}>
               <h3>{question.section === "reading_writing" ? "Reading and Writing" : "Math"} · Module {question.module_number} · Savol {question.position}</h3>
               <p><MathText value={question.prompt} /></p>
+              {question.image_url && <img className="bb-question-image" src={question.image_url} alt="Savolga tegishli rasm yoki grafik" />}
+              {question.prompt_uz && <details className="bb-translation"><summary>O‘zbekcha tarjimani ko‘rish</summary><p><MathText value={question.prompt_uz} /></p></details>}
               <div className="bb-review-correct"><b>To‘g‘ri javob:</b> <MathText value={correct} /></div>
               <p><b>Sizning javobingiz:</b> <MathText value={selected} /> {question.is_correct ? "✓" : "·"}</p>
               {question.explanation && <div className="bb-ai-explanation"><b>Admin izohi:</b><br /><MathText value={question.explanation} /></div>}

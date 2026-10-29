@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ExamResults, { type ExamSummary } from "./exam-results";
 import { MathText } from "@/components/math-formula";
 import { createClient } from "@/lib/supabase/client";
+import DesmosCalculator from "@/components/desmos-calculator";
 
 type Test = { id: string; title: string; kind: "topic" | "mock"; section: string | null; topic: string | null; duration_seconds: number };
-type Question = { id: string; section: "math" | "reading_writing"; module_number: number; topic: string; prompt: string; choices: string[]; position: number };
+type Question = { id: string; section: "math" | "reading_writing"; module_number: number; topic: string; prompt: string; choices: string[]; position: number; image_url?: string | null; prompt_uz?: string | null; choices_uz?: string[] | null };
 type Overlay = "directions" | "questions" | "review" | "reference" | "help" | "shortcuts" | null;
 
 const modules = [
@@ -18,23 +19,6 @@ const modules = [
 
 function formatTime(seconds: number) {
   return Math.floor(seconds / 60).toString().padStart(2, "0") + ":" + (seconds % 60).toString().padStart(2, "0");
-}
-
-function calculate(raw: string) {
-  const match = raw.match(/^\s*(-?\d+(?:\.\d+)?)\s*([+−×÷*/-])\s*(-?\d+(?:\.\d+)?)\s*$/);
-  if (!match) return "Xato";
-  const left = Number(match[1]);
-  const right = Number(match[3]);
-  switch (match[2]) {
-    case "+": return String(left + right);
-    case "-":
-    case "−": return String(left - right);
-    case "*":
-    case "×": return String(left * right);
-    case "/":
-    case "÷": return right === 0 ? "Xato" : String(left / right);
-    default: return "Xato";
-  }
 }
 
 export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: () => void }) {
@@ -57,7 +41,6 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
   const [lineReader, setLineReader] = useState(false);
   const [menu, setMenu] = useState(false);
   const [calc, setCalc] = useState(false);
-  const [calcValue, setCalcValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<ExamSummary | null>(null);
@@ -81,7 +64,11 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
       if (rpcError) {
         setLoadError(rpcError.message);
       } else {
-        const questions = (data ?? []) as Question[];
+        const questions = await Promise.all(((data ?? []) as Question[]).map(async (question) => {
+          if (!question.image_url) return question;
+          const { data: signed } = await supabase.storage.from("question-images").createSignedUrl(question.image_url, 3600);
+          return { ...question, image_url: signed?.signedUrl ?? null };
+        }));
         const missing = modules.filter((part) => !questions.some((q) => q.section === part.section && q.module_number === part.module));
         if (missing.length) {
           setLoadError("Testning barcha modullari to‘liq emas. Admin har bir modulga savol qo‘shib, testni qayta e’lon qilsin.");
@@ -135,6 +122,7 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
       correct: Number(result.correct_count ?? 0),
       total: Number(result.question_count ?? items.length),
       score: Number(result.estimated_score),
+      scoreMax: Number(result.score_max ?? 1600),
     });
     setBusy(false);
   }
@@ -261,6 +249,8 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
             <button type="button" className={crossMode ? "bb-cross-toggle active" : "bb-cross-toggle"} onClick={() => setCrossMode((enabled) => !enabled)}>A̸B̸C̸</button>
           </div>
           <p className={lineReader ? "bb-prompt line-reader" : "bb-prompt"}><MathText value={current.prompt} /></p>
+          {current.image_url && <img className="bb-question-image" src={current.image_url} alt="Savolga tegishli rasm yoki grafik" />}
+          {(current.prompt_uz || current.choices_uz?.some(Boolean)) && <details className="bb-translation"><summary>O‘zbekcha tarjimani ko‘rish</summary>{current.prompt_uz && <p className="bb-prompt"><MathText value={current.prompt_uz} /></p>}{current.choices_uz?.some(Boolean) && <ol type="A">{current.choices_uz.map((choice, choiceIndex) => <li key={choiceIndex}><MathText value={choice} /></li>)}</ol>}</details>}
           <div className="bb-choices">
             {(current.choices ?? []).map((choice, choiceIndex) => {
               const chosen = answers[current.id] === choiceIndex;
@@ -275,7 +265,7 @@ export default function SatMockPlayer({ test, onExit }: { test: Test; onExit: ()
           </div>
         </section>
       </main>
-      {calc && <aside className="bb-calculator"><div className="bb-calc-head"><strong>Kalkulyator</strong><button type="button" onClick={() => setCalc(false)}>×</button></div><input value={calcValue} onChange={(event) => setCalcValue(event.target.value)} aria-label="Kalkulyator qiymati" placeholder="Masalan: 12 × 3"/><div className="bb-calc-grid">{["7","8","9","÷","4","5","6","×","1","2","3","−","C","0",".","+","="].map((key) => <button type="button" key={key} onClick={() => key === "C" ? setCalcValue("") : key === "=" ? setCalcValue((value) => calculate(value)) : setCalcValue((value) => value + key)}>{key}</button>)}</div></aside>}
+      {calc && <DesmosCalculator onClose={() => setCalc(false)} />}
       <footer className="bb-footer">
         <strong>{test.title}</strong>
         <button type="button" className="bb-question-count" onClick={() => setOverlay("questions")}>Question {index + 1} of {currentItems.length}⌃</button>

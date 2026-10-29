@@ -4,11 +4,11 @@ import { createClient } from "@/lib/supabase/client";
 import { MathText } from "@/components/math-formula";
 import ExamResults, { type ExamSummary } from "./exam-results";
 import SatMockPlayer from "./sat-mock-player";
+import DesmosCalculator from "@/components/desmos-calculator";
 
 type Test={id:string;title:string;kind:"topic"|"mock";section:string|null;topic:string|null;duration_seconds:number};
-type Question={id:string;section:string;module_number:number;topic:string;prompt:string;choices:string[];position:number};
+type Question={id:string;section:string;module_number:number;topic:string;prompt:string;choices:string[];position:number;image_url?:string|null;prompt_uz?:string|null;choices_uz?:string[]|null};
 type Overlay="directions"|"questions"|"review"|"reference"|"help"|"shortcuts"|null;
-function calculate(raw:string){const m=raw.match(/^\s*(-?\d+(?:\.\d+)?)\s*([+−×÷*/-])\s*(-?\d+(?:\.\d+)?)\s*$/);if(!m)return "Xato";const a=Number(m[1]),b=Number(m[3]);switch(m[2]){case "+":return String(a+b);case "-":case "−":return String(a-b);case "*":case "×":return String(a*b);case "/":case "÷":return b===0?"Xato":String(a/b);default:return "Xato"}}
 
 export default function TestList({tests}:{tests:Test[]}) {
   const [active,setActive]=useState<Test|null>(null);
@@ -23,7 +23,6 @@ export default function TestList({tests}:{tests:Test[]}) {
   const [overlay,setOverlay]=useState<Overlay>(null);
   const [menu,setMenu]=useState(false);
   const [calc,setCalc]=useState(false);
-  const [calcValue,setCalcValue]=useState("");
   const [message,setMessage]=useState("");
   const [busy,setBusy]=useState(false);
   const [showTimer,setShowTimer]=useState(true);
@@ -48,7 +47,8 @@ export default function TestList({tests}:{tests:Test[]}) {
       const {data,error}=await supabase.rpc("get_test_questions",{p_test_id:test.id});
       if(error)throw error;
       if(!data?.length){setMessage("Bu testda savollar yo‘q.");return}
-      setItems(data as Question[]);setActive(test);setIndex(0);setAnswers({});setFlags({});setEliminated({});
+      const questions=await Promise.all((data as Question[]).map(async q=>{if(!q.image_url)return q;const {data:signed}=await supabase.storage.from("question-images").createSignedUrl(q.image_url,3600);return {...q,image_url:signed?.signedUrl??null}}));
+      setItems(questions);setActive(test);setIndex(0);setAnswers({});setFlags({});setEliminated({});
       setSeconds(test.duration_seconds);setDirectionsSeen(false);setOverlay("directions");
     }catch(e){setMessage(e instanceof Error?e.message:"Testni yuklab bo‘lmadi.")}
     finally{setBusy(false)}
@@ -63,9 +63,9 @@ export default function TestList({tests}:{tests:Test[]}) {
       if(error)throw error;
       const result=Array.isArray(data)?data[0]:data;
       if(!result?.attempt_id||typeof result.estimated_score!=="number")throw new Error("Natija saqlandi, ammo SAT ballini o‘qib bo‘lmadi.");
-      setSummary({attemptId:result.attempt_id,title:active.title,correct:Number(result.correct_count??0),total:Number(result.question_count??items.length),score:Number(result.estimated_score)});
+      setSummary({attemptId:result.attempt_id,title:active.title,correct:Number(result.correct_count??0),total:Number(result.question_count??items.length),score:Number(result.estimated_score),scoreMax:Number(result.score_max??800)});
       setActive(null);setItems([]);setOverlay(null);
-    }catch(e){setMessage(e instanceof Error?e.message:"Natijani saqlab bo‘lmadi.")}
+    }catch(e){setMessage(e instanceof Error?e.message:(typeof e==="object"&&e!==null&&"message" in e?String(e.message):"Natijani saqlab bo‘lmadi."))}
     finally{setBusy(false)}
   }
   function toggleEliminate(i:number){
@@ -82,6 +82,8 @@ export default function TestList({tests}:{tests:Test[]}) {
         <button className={crossMode?"bb-cross-toggle active":"bb-cross-toggle"} onClick={()=>setCrossMode(x=>!x)}>A̸B̸C̸</button>
       </div>
       <p className={lineReader?"bb-prompt line-reader":highlight?"bb-prompt text-highlight":"bb-prompt"}><MathText value={q.prompt}/></p>
+      {q.image_url&&<img className="bb-question-image" src={q.image_url} alt="Savolga tegishli rasm yoki grafik" />}
+      {(q.prompt_uz||q.choices_uz?.some(Boolean))&&<details className="bb-translation"><summary>O‘zbekcha tarjimani ko‘rish</summary>{q.prompt_uz&&<p className="bb-prompt"><MathText value={q.prompt_uz}/></p>}{q.choices_uz?.some(Boolean)&&<ol type="A">{q.choices_uz.map((choice,i)=><li key={i}><MathText value={choice}/></li>)}</ol>}</details>}
       <div className="bb-choices">
         {(q.choices||[]).map((choice,i)=>{
           const chosen=answers[q.id]===i, crossed=(eliminated[q.id]??[]).includes(i);
@@ -113,7 +115,7 @@ export default function TestList({tests}:{tests:Test[]}) {
       </header>
       <div className="bb-practice">BU MASHQ TESTI</div>
       <main className="bb-content">{renderQuestion(current,index)}</main>
-      {calc&&<aside className="bb-calculator"><div className="bb-calc-head"><strong>Kalkulyator</strong><button onClick={()=>setCalc(false)}>×</button></div><input value={calcValue} onChange={e=>setCalcValue(e.target.value)} aria-label="Kalkulyator qiymati" placeholder="Hisoblash uchun kiriting"/><div className="bb-calc-grid">{["7","8","9","÷","4","5","6","×","1","2","3","−","C","0",".","+","="].map(k=><button key={k} onClick={()=>k==="C"?setCalcValue(""):k==="="?setCalcValue(v=>{try{return calculate(v)}catch{return "Xato"}}):setCalcValue(v=>v+k)}>{k}</button>)}</div></aside>}
+      {calc&&<DesmosCalculator onClose={()=>setCalc(false)} />}
       <footer className="bb-footer"><strong>{active.title}</strong><button className="bb-question-count" onClick={()=>setOverlay("questions")}>Question {index+1} of {items.length}⌃</button><div className="bb-nav">{index>0&&<button onClick={()=>setIndex(i=>i-1)}>Back</button>}<button onClick={()=>index<items.length-1?setIndex(i=>i+1):setOverlay("review")}>{index<items.length-1?"Next":"Review"}</button></div></footer>
       {overlay&&<div className="bb-scrim" onMouseDown={e=>{if(e.target===e.currentTarget)setOverlay(null)}}>
         <div className={`bb-modal ${overlay==="directions"?"bb-directions":""}`}>

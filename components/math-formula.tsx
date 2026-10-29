@@ -1,12 +1,22 @@
 "use client";
 
 import katex from "katex";
+import { Fragment } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { MathfieldElement } from "mathlive";
 
 type MathTextProps = { value: string; className?: string };
 
 const mathToken = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g;
+const bareMathToken = /(?:\\(?:d?frac|tfrac)\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\{(?:[^{}]|\{[^{}]*\})*\}|\\sqrt(?:\[[^\]]+\])?\s*\{(?:[^{}]|\{[^{}]*\})*\}|\\(?:pi|theta|alpha|beta|gamma|delta|leq|geq|neq|times|cdot|pm|infty|log|ln|sin|cos|tan)\b|(?<![\p{L}\p{N}])(?:[+-]?\d+(?:\.\d+)?[a-zA-Z](?:\^\d+)?|[a-zA-Z](?:\^\d+)?)(?:\s*[+\-=<>≤≥]\s*(?:[+-]?\d+(?:\.\d+)?[a-zA-Z]?(?:\^\d+)?|[a-zA-Z](?:\^\d+)?|\d+(?:\.\d+)?)){1,5})/gu;
+
+function renderFormula(part: string) {
+  const isParenMath = part.startsWith("\\(") && part.endsWith("\\)");
+  const isDisplayMath = part.startsWith("\\[") && part.endsWith("\\]");
+  const isDoubleDollarMath = part.startsWith("$$") && part.endsWith("$$");
+  const tex = isParenMath || isDisplayMath || isDoubleDollarMath ? part.slice(2, -2) : part.slice(1, -1);
+  return katex.renderToString(tex, { throwOnError: false, strict: "ignore", displayMode: isDisplayMath || isDoubleDollarMath });
+}
 
 export function MathText({ value, className }: MathTextProps) {
   const parts = value.split(mathToken).filter(Boolean);
@@ -17,10 +27,20 @@ export function MathText({ value, className }: MathTextProps) {
         const isDisplayMath = part.startsWith("\\[") && part.endsWith("\\]");
         const isDoubleDollarMath = part.startsWith("$$") && part.endsWith("$$");
         const isDollarMath = part.startsWith("$") && part.endsWith("$");
-        if (!isParenMath && !isDisplayMath && !isDoubleDollarMath && !isDollarMath) return <span key={index}>{part}</span>;
-        const tex = isParenMath || isDisplayMath ? part.slice(2, -2) : isDoubleDollarMath ? part.slice(2, -2) : part.slice(1, -1);
-        const html = katex.renderToString(tex, { throwOnError: false, strict: "ignore", displayMode: isDisplayMath || isDoubleDollarMath });
-        return <span key={index} className="math-rendered" dangerouslySetInnerHTML={{ __html: html }} />;
+        if (isParenMath || isDisplayMath || isDoubleDollarMath || isDollarMath) {
+          return <span key={index} className="math-rendered" dangerouslySetInnerHTML={{ __html: renderFormula(part) }} />;
+        }
+        const normalized = part.replace(/\\\\(?=[a-zA-Z])/g, "\\");
+        const plainParts = normalized.replace(bareMathToken, (formula) => `\\(${formula}\\)`).split(mathToken).filter(Boolean);
+        return <Fragment key={index}>{plainParts.map((plainPart, plainIndex) => {
+          const isMath = plainPart.startsWith("\\(") && plainPart.endsWith("\\)")
+            || plainPart.startsWith("\\[") && plainPart.endsWith("\\]")
+            || plainPart.startsWith("$$") && plainPart.endsWith("$$")
+            || plainPart.startsWith("$") && plainPart.endsWith("$");
+          return isMath
+            ? <span key={plainIndex} className="math-rendered" dangerouslySetInnerHTML={{ __html: renderFormula(plainPart) }} />
+            : <span key={plainIndex}>{plainPart}</span>;
+        })}</Fragment>;
       })}
     </span>
   );
