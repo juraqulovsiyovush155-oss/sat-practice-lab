@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import PDFParser, { type Output } from "pdf2json";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -23,31 +23,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function extractPdfText(bytes: Uint8Array) {
-  const loadingTask = getDocument({ data: bytes, useSystemFonts: true, disableFontFace: true, isEvalSupported: false });
-  try {
-    const pdf = await loadingTask.promise;
-    if (pdf.numPages > 160) throw new Error("PDF juda uzun (160 sahifagacha qabul qilinadi). Uni kichik qismlarga ajrating.");
-    const pages: string[] = [];
-    const blankPages: number[] = [];
-    let totalChars = 0;
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber);
-      const content = await page.getTextContent();
-      const pageText = content.items.map((item) => "str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "").join("").trim();
-      page.cleanup();
-      if (pageText.length < 30) blankPages.push(pageNumber);
-      totalChars += pageText.length;
-      if (totalChars > MAX_EXTRACTED_CHARS) throw new Error("PDF matni juda katta. Uni kamroq sahifali qismlarga bo‘lib yuklang.");
-      pages.push(`--- PDF sahifa ${pageNumber} ---\n${pageText}`);
+  const parser = new PDFParser(null, true);
+  return new Promise<{ text: string; blankPages: number[] }>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      parser.destroy();
+      reject(new Error("PDF uzoq tahlil qilinyapti. Faylni kichikroq qismlarga bo‘ling."));
+    }, 25_000);
+    const finish = (error?: Error, result?: { text: string; blankPages: number[] }) => {
+      clearTimeout(timeout);
+      parser.destroy();
+      if (error) reject(error);
+      else if (result) resolve(result);
+      else reject(new Error("PDF matnini ajratib bo‘lmadi."));
+    };
+    parser.on("pdfParser_dataError", (details) => {
+      const cause = "parserError" in details ? details.parserError : details;
+      finish(cause instanceof Error ? cause : new Error("PDF faylini o‘qib bo‘lmadi."));
+    });
+    parser.on("pdfParser_dataReady", () => {
+      try {
+        const data = parser.data as Output | null;
+        const pages = data?.Pages ?? [];
+        if (pages.length > 160) throw new Error("PDF juda uzun (160 sahifagacha qabul qilinadi). Uni kichik qismlarga ajrating.");
+        const text = parser.getRawTextContent().replace(/\u0000/g, " ").trim();
+        if (text.length > MAX_EXTRACTED_CHARS) throw new Error("PDF matni juda katta. Uni kamroq sahifali qismlarga bo‘lib yuklang.");
+        if (text.length < 100) throw new Error("PDF’da o‘qiladigan matn topilmadi. Skanerlangan PDF’ni OCR qilingan yoki matn tanlanadigan PDF ko‘rinishida yuklang.");
+        const blankPages = pages.flatMap((page, index) => page.Texts.length === 0 ? [index + 1] : []);
+        finish(undefined, { text, blankPages });
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error("PDF matnini ajratib bo‘lmadi."));
+      }
+    });
+    try {
+      parser.parseBuffer(Buffer.from(bytes));
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error("PDF faylini o‘qib bo‘lmadi."));
     }
-    const text = pages.join("\n\n");
-    if (text.replace(/--- PDF sahifa \d+ ---/g, "").trim().length < 100) {
-      throw new Error("PDF’da o‘qiladigan matn topilmadi. Skanerlangan PDF’ni OCR qilingan yoki matn tanlanadigan PDF ko‘rinishida yuklang.");
-    }
-    return { text, blankPages };
-  } finally {
-    await loadingTask.destroy();
-  }
+  });
 }
 
 function normalizeQuestions(value: unknown, selectedTest: { kind: string; section: string | null; topic: string | null }) {
