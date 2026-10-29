@@ -335,7 +335,14 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         warnings = [...new Set(chunkResults.flatMap((result) => result.warnings ?? []))];
       }
 
-      if (!importedQuestions.length) throw new Error("PDF’dan javob variantlari bilan savollar ajratilmadi. Aniqroq PDF yoki javoblar kaliti bor faylni sinang.");
+      if (!importedQuestions.length) {
+        setImportWarnings(warnings);
+        if (warnings.length) {
+          setMessage("Grafik yoki inglizcha asl matni o‘qilmagan savollar import qilinmadi. Ogohlantirishlarni ko‘rib, keraklilarini qo‘lda kiriting.");
+          return;
+        }
+        throw new Error("PDF’dan inglizcha asl matn va javob variantlari bilan savollar ajratilmadi. Aniqroq PDF yoki javoblar kaliti bor faylni sinang.");
+      }
       setImportCandidates(importedQuestions);
       setImportWarnings(warnings);
       setMessage(`${importedQuestions.length} ta savol PDF’dan ajratildi. Saqlashdan oldin javoblarni tekshiring.`);
