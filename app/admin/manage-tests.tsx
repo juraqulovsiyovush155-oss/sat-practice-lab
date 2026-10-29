@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { MathInput } from "@/components/math-formula";
 
@@ -36,6 +36,12 @@ const emptyEditor: EditorValues = {
   explanation: "",
 };
 const letters = ["A", "B", "C", "D"];
+const sortQuestions = (questions: QuestionRecord[]) => [...questions].sort((left, right) => {
+  const sectionOrder = (section: QuestionRecord["section"]) => section === "reading_writing" ? 0 : 1;
+  return sectionOrder(left.section) - sectionOrder(right.section)
+    || left.module_number - right.module_number
+    || left.position - right.position;
+});
 
 export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const [selectedTestId, setSelectedTestId] = useState(tests[0]?.id ?? "");
@@ -50,9 +56,21 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const supabase = useMemo(() => createClient(), []);
+  const knownTestIds = useRef(new Set(tests.map((test) => test.id)));
   const selectedTest = tests.find((test) => test.id === selectedTestId) ?? null;
 
   useEffect(() => {
+    const newlyCreatedTest = tests.find((test) => !knownTestIds.current.has(test.id));
+    for (const test of tests) knownTestIds.current.add(test.id);
+    if (newlyCreatedTest) {
+      setSelectedTestId(newlyCreatedTest.id);
+      setDraftSection(newlyCreatedTest.section ?? "math");
+      setDraftModule(1);
+      resetEditor();
+      setMessage("Yangi qoralama tanlandi. Endi shu testga savollarni kiriting.");
+      setError("");
+      return;
+    }
     if (!tests.length) {
       setSelectedTestId("");
       return;
@@ -75,6 +93,8 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         .from("questions")
         .select("id,prompt,choices,section,module_number,position,topic")
         .eq("test_id", selectedTestId)
+        .order("section", { ascending: true })
+        .order("module_number", { ascending: true })
         .order("position", { ascending: true });
       if (cancelled) return;
       if (questionsError) {
@@ -83,7 +103,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         setLoading(false);
         return;
       }
-      setQuestions((data ?? []) as QuestionRecord[]);
+      setQuestions(sortQuestions((data ?? []) as QuestionRecord[]));
       setLoading(false);
     }
     void loadQuestions();
@@ -175,9 +195,11 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         .from("questions")
         .select("id,prompt,choices,section,module_number,position,topic")
         .eq("test_id", selectedTest.id)
+        .order("section", { ascending: true })
+        .order("module_number", { ascending: true })
         .order("position", { ascending: true });
       if (reloadError) throw reloadError;
-      setQuestions((data ?? []) as QuestionRecord[]);
+      setQuestions(sortQuestions((data ?? []) as QuestionRecord[]));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Savol saqlanmadi.");
     } finally {
@@ -309,7 +331,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       <div className="row">
         <div>
           <h2>Test savollari</h2>
-      <p>Testni tanlang, savollarni modullarga joylang va tayyor bo‘lgach e’lon qiling.</p>
+          <p>Qoralama test tanlang, savol matni va 4 ta javobni kiriting, to‘g‘ri javobni belgilang, so‘ng saqlang.</p>
         </div>
         {selectedTest && (
           <span className="tag">{selectedTest.published ? "E’lon qilingan" : "Qoralama"}</span>
@@ -379,6 +401,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
               ) : (
                 <p className="notice">{selectedTest.section === "math" ? "Math · Module 1" : "Reading and Writing · Module 1"}</p>
               )}
+              <p className="notice">Math savolida ildiz, kasr, daraja va boshqa belgilar pastdagi ∑ Formula tugmalarida doim ochiq. Tugmani bosib, qavs ichiga qiymatni yozing — ko‘rinishini darhol tekshirishingiz mumkin.</p>
               <MathInput
                 id="question-prompt"
                 label="Savol matni"
@@ -487,24 +510,31 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
             <p>Savollar yuklanmoqda…</p>
           ) : questions.length ? (
             <ol className="admin-question-list">
-              {questions.map((question) => (
-                <li key={question.id}>
-                  <div className="admin-question-copy">
-                    <strong>{question.position}.</strong>
-                    <span>{question.prompt}</span>
-                  </div>
-                  {!selectedTest.published && (
-                    <div className="admin-question-actions">
-                      <button type="button" className="btn secondary" onClick={() => void editQuestion(question)}>
-                        Tahrirlash
-                      </button>
-                      <button type="button" className="btn admin-danger" onClick={() => void deleteQuestion(question)}>
-                        O‘chirish
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
+              {questions.map((question, index) => {
+                const previous = questions[index - 1];
+                const startsModule = !previous || previous.section !== question.section || previous.module_number !== question.module_number;
+                return (
+                  <Fragment key={question.id}>
+                    {startsModule && <li className="admin-module-heading">{question.section === "reading_writing" ? "Reading and Writing" : "Math"} · Module {question.module_number}</li>}
+                    <li>
+                      <div className="admin-question-copy">
+                        <strong>{question.position}.</strong>
+                        <span>{question.prompt}</span>
+                      </div>
+                      {!selectedTest.published && (
+                        <div className="admin-question-actions">
+                          <button type="button" className="btn secondary" onClick={() => void editQuestion(question)}>
+                            Tahrirlash
+                          </button>
+                          <button type="button" className="btn admin-danger" onClick={() => void deleteQuestion(question)}>
+                            O‘chirish
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  </Fragment>
+                );
+              })}
             </ol>
           ) : (
             <p className="notice">Bu testga hali savol qo‘shilmagan.</p>

@@ -35,14 +35,23 @@ type MathInputProps = {
 };
 
 const formulas = [
-  { label: "√", snippet: "\\(\\sqrt{}\\)", cursor: 8 },
-  { label: "a/b", snippet: "\\(\\frac{}{}\\)", cursor: 8 },
-  { label: "xⁿ", snippet: "\\(x^{}\\)", cursor: 5 },
-  { label: "xₙ", snippet: "\\(x_{}\\)", cursor: 5 },
-  { label: "π", snippet: "\\(\\pi\\)", cursor: 5 },
-  { label: "sin", snippet: "\\(\\sin()\\)", cursor: 7 },
-  { label: "≤", snippet: "\\(\\leq\\)", cursor: 5 },
-  { label: "∞", snippet: "\\(\\infty\\)", cursor: 8 },
+  { label: "√", snippet: "\\(\\sqrt{}\\)", cursor: 8, help: "Kvadrat ildiz" },
+  { label: "∛", snippet: "\\(\\sqrt[3]{}\\)", cursor: 11, help: "Kub ildiz" },
+  { label: "a/b", snippet: "\\(\\frac{}{}\\)", cursor: 8, help: "Kasr" },
+  { label: "xⁿ", snippet: "\\(x^{}\\)", cursor: 5, help: "Daraja" },
+  { label: "xₙ", snippet: "\\(x_{}\\)", cursor: 5, help: "Indeks" },
+  { label: "|x|", snippet: "\\(\\left|{}\\right|\\)", cursor: 9, help: "Modul" },
+  { label: "π", snippet: "\\(\\pi\\)", cursor: 5, help: "Pi" },
+  { label: "θ", snippet: "\\(\\theta\\)", cursor: 8, help: "Teta" },
+  { label: "sin", snippet: "\\(\\sin()\\)", cursor: 7, help: "Sinus" },
+  { label: "log", snippet: "\\(\\log()\\)", cursor: 7, help: "Logarifm" },
+  { label: "≤", snippet: "\\(\\leq\\)", cursor: 5, help: "Kichik yoki teng" },
+  { label: "≥", snippet: "\\(\\geq\\)", cursor: 5, help: "Katta yoki teng" },
+  { label: "≠", snippet: "\\(\\neq\\)", cursor: 5, help: "Teng emas" },
+  { label: "±", snippet: "\\(\\pm\\)", cursor: 5, help: "Plus-minus" },
+  { label: "×", snippet: "\\(\\times\\)", cursor: 8, help: "Ko‘paytirish" },
+  { label: "÷", snippet: "\\(\\div\\)", cursor: 6, help: "Bo‘lish" },
+  { label: "∞", snippet: "\\(\\infty\\)", cursor: 8, help: "Cheksizlik" },
 ];
 
 export function MathInput({
@@ -56,7 +65,7 @@ export function MathInput({
   required = false,
 }: MathInputProps) {
   const fieldRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-  const [showFormulas, setShowFormulas] = useState(false);
+  const [showFormulas, setShowFormulas] = useState(true);
 
   function insertFormula(snippet: string, cursorOffset: number) {
     const field = fieldRef.current;
@@ -88,7 +97,8 @@ export function MathInput({
             <button
               type="button"
               key={formula.label}
-              title={formula.label === "√" ? "Ildiz qo‘shish" : formula.label === "a/b" ? "Kasr qo‘shish" : "Formula qo‘shish"}
+              title={formula.help}
+              aria-label={formula.help}
               onClick={() => insertFormula(formula.snippet, formula.cursor)}
             >
               {formula.label}
@@ -118,7 +128,7 @@ export function MathInput({
           placeholder={placeholder}
         />
       )}
-      <div className="math-input-help">Ildiz, kasr yoki darajani tugma orqali qo‘shing. Formula oldindan ko‘rinadi.</div>
+      <div className="math-input-help">Formula tugmasini bosing va kursor qavs ichida turganda qiymatni yozing. Masalan, ildiz uchun tugmani bosing, 16 deb yozing. Matn bilan formulani birga yozish mumkin.</div>
       {value.includes("\\(") || value.includes("$") ? (
         <div className="math-preview"><MathText value={value} /></div>
       ) : null}

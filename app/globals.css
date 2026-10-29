@@ -233,7 +233,15 @@
 @keyframes hero-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes badge-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes pulse-ring{0%{box-shadow:0 0 0 0 #b6ec6270}75%,100%{box-shadow:0 0 0 8px #b6ec6200}}
-@keyframes word-cycle{0%,23%{opacity:1;transform:translateY(0)}30%,100%{opacity:0;transform:translateY(7px)}}
+@keyframes word-cycle{0%,28%{opacity:1;transform:translateY(0)}32%,100%{opacity:0;transform:translateY(9px)}}
+@keyframes word-cycle-static{0%,28%{opacity:1}32%,100%{opacity:0}}
+@keyframes section-arrive{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.program-section .section-head,.program-card,.learning-section .learning-copy,.learning-list article,.home-faq>div,.faq-item,.final-cta{animation:section-arrive .75s both}
+.program-card:nth-child(2),.learning-list article:nth-child(2),.faq-item:nth-child(2){animation-delay:.12s}
+.learning-list article:nth-child(3),.faq-item:nth-child(3){animation-delay:.24s}
+.learning-list article:nth-child(4),.faq-item:nth-child(4){animation-delay:.36s}
+.program-card:hover,.site-light-cta:hover{transition:transform .25s ease,box-shadow .25s ease,background .25s ease}
+.admin-question-list li.admin-module-heading{margin:18px 0 6px;padding:8px 11px;border:0;border-radius:9px;background:#eef6ee;color:#155d3b;font-size:12px;font-weight:850;list-style:none}
 
 /* Auth pages use the user's image without hiding the form on smaller screens. */
 .auth-layout{width:min(1200px,calc(100% - 36px));min-height:100vh;margin:0 auto;padding:28px 0;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);align-items:center;gap:34px}
@@ -293,15 +301,16 @@
 .netlify-badge,#netlify-badge,[data-netlify-badge],iframe[title*="Netlify" i],iframe[aria-label*="Netlify" i]{display:none!important;visibility:hidden!important;pointer-events:none!important}
 
 @media(max-width:850px){
-  .home-hero{grid-template-columns:1fr;padding-top:54px}.home-hero-visual.image-hero{min-height:390px;margin-top:12px}
-  .auth-layout{grid-template-columns:1fr;gap:17px;padding:18px 0}.auth-visual{min-height:270px;order:2}.auth-visual-copy{bottom:52px}.auth-visual-copy h2{font-size:32px}.auth-visual-copy p{font-size:12px}.auth-panel{order:1;max-width:620px}.auth-visual-orbit{bottom:17px}
+  .home-hero{grid-template-columns:1fr;padding-top:54px}.home-hero-visual.image-hero{min-height:unset;aspect-ratio:16/9;margin-top:12px}
+  .auth-layout{grid-template-columns:1fr;gap:17px;padding:18px 0}.auth-visual{min-height:unset;aspect-ratio:16/9;order:1}.auth-visual-copy{bottom:52px}.auth-visual-copy h2{font-size:32px}.auth-visual-copy p{font-size:12px}.auth-panel{order:2;max-width:620px}.auth-visual-orbit{bottom:17px}
   .bb-break{grid-template-columns:1fr;align-content:center;gap:20px}.bb-break-count{justify-self:center;width:min(420px,100%)}
 }
 @media(max-width:540px){
-  .home-hero-visual.image-hero{min-height:300px;border-radius:18px}.image-hero-tag{left:12px;top:12px;font-size:8px}.image-hero-caption{left:16px;bottom:15px}.image-hero .hero-float-top{right:6px;top:14%}.image-hero .hero-float-bottom{right:5px;bottom:15px}.hero-animated-line{align-items:flex-start;flex-direction:column;gap:2px}.hero-animated-words{min-width:210px}
-  .auth-layout{width:min(calc(100% - 22px),520px)}.auth-visual{min-height:230px;aspect-ratio:auto}.auth-form-panel{padding:22px!important}.bb-break{padding:20px}.bb-break-copy h1{font-size:34px}.bb-result-header{align-items:flex-start;flex-direction:column}.bb-result-score{padding:18px}.bb-result-score strong{font-size:64px}
+  .home-hero-visual.image-hero{width:100%;min-height:unset;aspect-ratio:16/9;border-radius:18px}.image-hero-photo{object-fit:contain;transform:none}.image-hero-tag{left:12px;top:12px;font-size:8px}.image-hero-caption{left:16px;bottom:15px}.image-hero .hero-float-top{right:6px;top:14%}.image-hero .hero-float-bottom{right:5px;bottom:15px}.hero-animated-line{align-items:flex-start;flex-direction:column;gap:2px}.hero-animated-words{min-width:210px}
+  .auth-layout{width:min(calc(100% - 22px),520px)}.auth-visual{width:100%;min-height:unset;aspect-ratio:16/9}.auth-visual img{object-fit:contain}.auth-form-panel{padding:22px!important}.bb-break{padding:20px}.bb-break-copy h1{font-size:34px}.bb-result-header{align-items:flex-start;flex-direction:column}.bb-result-score{padding:18px}.bb-result-score strong{font-size:64px}
 }
 @media(prefers-reduced-motion:reduce){
-  .home-hero-copy h1,.home-hero-copy>p,.home-hero-copy .hero-cta-row,.home-hero-visual.image-hero,.image-hero-tag .image-hero-pulse,.image-hero-caption,.image-hero .hero-float,.auth-visual-copy,.hero-animated-words b{animation:none!important;transition:none!important}
+  .home-hero-copy h1,.home-hero-copy>p,.home-hero-copy .hero-cta-row,.home-hero-visual.image-hero,.image-hero-tag .image-hero-pulse,.image-hero-caption,.image-hero .hero-float,.auth-visual-copy,.program-section .section-head,.program-card,.learning-section .learning-copy,.learning-list article,.home-faq>div,.faq-item,.final-cta{animation:none!important;transition:none!important}
+  .hero-animated-words b{animation:word-cycle-static 9s linear infinite!important;transform:none!important}
   .hero-animated-words b:first-child{opacity:1}
 }
