@@ -1,11 +1,12 @@
 "use client";
 
 import katex from "katex";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { MathfieldElement } from "mathlive";
 
 type MathTextProps = { value: string; className?: string };
 
-const mathToken = /(\\\([\s\S]*?\\\)|\$[^$]+\$)/g;
+const mathToken = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g;
 
 export function MathText({ value, className }: MathTextProps) {
   const parts = value.split(mathToken).filter(Boolean);
@@ -13,10 +14,12 @@ export function MathText({ value, className }: MathTextProps) {
     <span className={className}>
       {parts.map((part, index) => {
         const isParenMath = part.startsWith("\\(") && part.endsWith("\\)");
+        const isDisplayMath = part.startsWith("\\[") && part.endsWith("\\]");
+        const isDoubleDollarMath = part.startsWith("$$") && part.endsWith("$$");
         const isDollarMath = part.startsWith("$") && part.endsWith("$");
-        if (!isParenMath && !isDollarMath) return <span key={index}>{part}</span>;
-        const tex = isParenMath ? part.slice(2, -2) : part.slice(1, -1);
-        const html = katex.renderToString(tex, { throwOnError: false, strict: "ignore" });
+        if (!isParenMath && !isDisplayMath && !isDoubleDollarMath && !isDollarMath) return <span key={index}>{part}</span>;
+        const tex = isParenMath || isDisplayMath ? part.slice(2, -2) : isDoubleDollarMath ? part.slice(2, -2) : part.slice(1, -1);
+        const html = katex.renderToString(tex, { throwOnError: false, strict: "ignore", displayMode: isDisplayMath || isDoubleDollarMath });
         return <span key={index} className="math-rendered" dangerouslySetInnerHTML={{ __html: html }} />;
       })}
     </span>
@@ -65,7 +68,40 @@ export function MathInput({
   required = false,
 }: MathInputProps) {
   const fieldRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const mathHostRef = useRef<HTMLDivElement>(null);
+  const mathFieldRef = useRef<MathfieldElement | null>(null);
+  const selectionRef = useRef({ start: 0, end: 0 });
   const [showFormulas, setShowFormulas] = useState(true);
+  const [showFullEditor, setShowFullEditor] = useState(false);
+  const [mathValue, setMathValue] = useState("");
+
+  useEffect(() => {
+    if (!showFullEditor || !mathHostRef.current) return;
+    let cancelled = false;
+    let field: MathfieldElement | null = null;
+    void import("mathlive").then(({ MathfieldElement }) => {
+      if (cancelled || !mathHostRef.current) return;
+      MathfieldElement.fontsDirectory = "/mathlive-fonts";
+      field = new MathfieldElement();
+      field.className = "math-live-field";
+      field.mathVirtualKeyboardPolicy = "manual";
+      field.setAttribute("placeholder", "\\sqrt{x^2+1}");
+      const updateValue = () => setMathValue(field?.value ?? "");
+      field.addEventListener("input", updateValue);
+      mathHostRef.current.append(field);
+      mathFieldRef.current = field;
+      field.focus();
+      setMathValue("");
+    });
+    return () => {
+      cancelled = true;
+      if (field) {
+        field.executeCommand("hideVirtualKeyboard");
+        field.remove();
+        mathFieldRef.current = null;
+      }
+    };
+  }, [showFullEditor]);
 
   function insertFormula(snippet: string, cursorOffset: number) {
     const field = fieldRef.current;
@@ -78,18 +114,46 @@ export function MathInput({
     });
   }
 
+  function openFullEditor() {
+    const field = fieldRef.current;
+    selectionRef.current = {
+      start: field?.selectionStart ?? value.length,
+      end: field?.selectionEnd ?? value.length,
+    };
+    setMathValue("");
+    setShowFullEditor(true);
+  }
+
+  function insertFullFormula() {
+    const latex = mathFieldRef.current?.value.trim();
+    if (!latex) return;
+    const { start, end } = selectionRef.current;
+    const formula = `\\(${latex}\\)`;
+    onChange(value.slice(0, start) + formula + value.slice(end));
+    setShowFullEditor(false);
+    window.requestAnimationFrame(() => {
+      const field = fieldRef.current;
+      const cursor = start + formula.length;
+      field?.focus();
+      field?.setSelectionRange(cursor, cursor);
+    });
+  }
+
   return (
     <div className="math-input">
       <div className="math-input-heading">
         <label htmlFor={id}>{label}</label>
-        <button
-          type="button"
-          className="math-toggle"
-          aria-expanded={showFormulas}
-          onClick={() => setShowFormulas((open) => !open)}
-        >
-          ∑ Formula
-        </button>
+        <div className="math-input-tools">
+          <button
+            type="button"
+            className="math-toggle"
+            aria-expanded={showFormulas}
+            onClick={() => setShowFormulas((open) => !open)}
+          >
+            ∑ Tezkor
+          </button>
+          <button type="button" className="math-toggle math-live-toggle" onClick={openFullEditor}>∑ To‘liq formula</button>
+        </div>
       </div>
       {showFormulas && (
         <div className="math-toolbar" aria-label="Formula belgilarini qo‘shish">
@@ -128,10 +192,25 @@ export function MathInput({
           placeholder={placeholder}
         />
       )}
-      <div className="math-input-help">Formula tugmasini bosing va kursor qavs ichida turganda qiymatni yozing. Masalan, ildiz uchun tugmani bosing, 16 deb yozing. Matn bilan formulani birga yozish mumkin.</div>
-      {value.includes("\\(") || value.includes("$") ? (
+      <div className="math-input-help">To‘liq formula muharririda kasr, ildiz, daraja, tenglama, funksiya, matritsa va boshqa belgilarni vizual kiriting yoki LaTeX yozing.</div>
+      {value.includes("\\(") || value.includes("\\[") || value.includes("$") ? (
         <div className="math-preview"><MathText value={value} /></div>
       ) : null}
+      {showFullEditor && (
+        <div className="math-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowFullEditor(false); }}>
+          <section className="math-editor-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-math-title`}>
+            <div className="row">
+              <div><h3 id={`${id}-math-title`}>Matematik ifoda</h3><p>Formula yaratish uchun belgilarni bosing yoki LaTeX buyrug‘ini yozing.</p></div>
+              <button type="button" className="math-editor-close" aria-label="Yopish" onClick={() => setShowFullEditor(false)}>×</button>
+            </div>
+            <div ref={mathHostRef} className="math-live-host" />
+            <div className="row math-editor-actions">
+              <button type="button" className="btn secondary" onClick={() => mathFieldRef.current?.executeCommand("showVirtualKeyboard")}>Matematik klaviatura</button>
+              <button type="button" className="btn primary" disabled={!mathValue.trim()} onClick={insertFullFormula}>Ifodani qo‘shish</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

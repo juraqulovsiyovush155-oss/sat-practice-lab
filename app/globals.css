@@ -263,6 +263,7 @@
 /* Equation entry and readable inline math for both authors and students. */
 .math-input{margin:12px 0}
 .math-input-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.math-input-tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .math-input-heading label{margin:0}
 .math-toggle{border:1px solid #d4e2d5;border-radius:9px;padding:6px 10px;background:#f0f7ef;color:#155d3b;font-size:11px;font-weight:850;cursor:pointer}
 .math-toolbar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 7px;padding:8px;border:1px solid #dce6dd;border-radius:10px;background:#f7fbf7}
@@ -271,6 +272,15 @@
 .math-input-help{margin-top:4px;color:#728075;font-size:10px}
 .math-preview{margin-top:7px;padding:8px 10px;border:1px dashed #c8d8ca;border-radius:8px;background:#fbfdfb;color:#21392a;min-height:34px;overflow:auto}
 .math-rendered{display:inline-block;padding:0 2px}.math-rendered .katex{font-size:1.04em}
+.math-editor-backdrop{position:fixed;inset:0;z-index:2147482000;display:grid;place-items:center;padding:16px;background:#101d17a8}
+.math-editor-dialog{width:min(760px,100%);max-height:min(90vh,720px);overflow:auto;padding:22px;border:1px solid #dbe5dc;border-radius:18px;background:white;box-shadow:0 24px 80px #10251c4d}
+.math-editor-dialog h3{margin:0}.math-editor-dialog .row>div p{font-size:12px}.math-editor-close{width:36px;height:36px;border:0;border-radius:50%;background:#edf5ed;color:#183c28;font-size:27px;line-height:1}
+.math-live-host{margin:18px 0 12px;min-height:84px}
+.math-live-field{display:block;width:100%;min-height:82px;padding:16px;border:1px solid #aebfb1;border-radius:12px;background:white;color:#172a20;font-size:24px;--caret-color:#176b43;--selection-background-color:#d8edcf}
+.math-editor-actions{justify-content:flex-end;padding-top:12px;border-top:1px solid #e4ebe5}
+.pdf-import-panel{margin:18px 0;padding:18px;border:1px solid #cbdccb;border-radius:14px;background:linear-gradient(135deg,#f5faf4,#fff)}
+.pdf-import-panel h3{margin:0 0 3px}.pdf-import-panel .field{margin-bottom:8px}.pdf-import-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}.pdf-import-controls .field{flex:1 1 300px;margin:0}.pdf-import-preview{margin-top:18px;padding:16px;border:1px solid #d8e4d8;border-radius:12px;background:white}.pdf-import-preview h4{margin:0}.pdf-import-preview>ol{display:grid;gap:14px;padding-left:25px}.pdf-import-preview>ol>li{padding:12px;border:1px solid #e1e9e1;border-radius:10px;background:#fcfefc}.pdf-import-preview>ol>li>.row strong{font-size:12px;color:#185d3c}.pdf-preview-prompt,.pdf-preview-choices,.pdf-answer-review{display:block;margin:8px 0}.pdf-preview-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.pdf-preview-choices label{display:flex;align-items:flex-start;gap:8px;padding:8px;border-radius:9px;background:#f7faf7}.pdf-preview-choices label>span{padding-top:6px;color:#176b43;font-weight:850}.pdf-preview-choices .math-input{flex:1;min-width:0;margin:0}.pdf-preview-choices .math-input-heading{margin:0}.pdf-preview-choices .math-input-tools,.pdf-preview-choices .math-input-help{display:none}.pdf-preview-choices .field{margin:4px 0;padding:8px}.pdf-answer-review{max-width:260px}.admin-test-actions{justify-content:flex-end}
+.pdf-preview-prompt{margin:10px 0;white-space:pre-wrap;color:#1d2a20}.pdf-preview-choice-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding-left:26px}.pdf-preview-choice-list li{padding:8px 10px;border:1px solid #e1e9e1;border-radius:9px;background:white}.pdf-preview-choice-list li.correct{border-color:#9fc99e;background:#f0f8ed}.pdf-preview-explanation{padding:10px;border-radius:8px;background:#f4f8f3;white-space:pre-wrap}.pdf-preview-explanation strong{color:#185d3c}.pdf-candidate-editor>.cards{gap:8px}.pdf-candidate-editor .math-editor-actions{display:flex;justify-content:flex-end}
 .bb-prompt .katex,.bb-choice .katex,.bb-review-item .katex{font-size:1.08em}
 
 /* Keep exam controls above platform overlays and reserve room for the finish action. */
@@ -308,6 +318,7 @@
 @media(max-width:540px){
   .home-hero-visual.image-hero{width:100%;min-height:unset;aspect-ratio:16/9;border-radius:18px}.image-hero-photo{object-fit:contain;transform:none}.image-hero-tag{left:12px;top:12px;font-size:8px}.image-hero-caption{left:16px;bottom:15px}.image-hero .hero-float-top{right:6px;top:14%}.image-hero .hero-float-bottom{right:5px;bottom:15px}.hero-animated-line{align-items:flex-start;flex-direction:column;gap:2px}.hero-animated-words{min-width:210px}
   .auth-layout{width:min(calc(100% - 22px),520px)}.auth-visual{width:100%;min-height:unset;aspect-ratio:16/9}.auth-visual img{object-fit:contain}.auth-form-panel{padding:22px!important}.bb-break{padding:20px}.bb-break-copy h1{font-size:34px}.bb-result-header{align-items:flex-start;flex-direction:column}.bb-result-score{padding:18px}.bb-result-score strong{font-size:64px}
+  .math-editor-dialog{padding:16px}.math-editor-actions{align-items:stretch;flex-direction:column}.pdf-import-panel{padding:13px}.pdf-import-controls .btn{width:100%}.pdf-preview-choice-list{grid-template-columns:1fr}.pdf-import-preview{padding:11px}.admin-test-actions{width:100%}.admin-test-actions .btn{flex:1}
 }
 @media(prefers-reduced-motion:reduce){
   .home-hero-copy h1,.home-hero-copy>p,.home-hero-copy .hero-cta-row,.home-hero-visual.image-hero,.image-hero-tag .image-hero-pulse,.image-hero-caption,.image-hero .hero-float,.auth-visual-copy,.program-section .section-head,.program-card,.learning-section .learning-copy,.learning-list article,.home-faq>div,.faq-item,.final-cta{animation:none!important;transition:none!important}

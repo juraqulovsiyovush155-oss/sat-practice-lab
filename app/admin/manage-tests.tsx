@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { MathInput } from "@/components/math-formula";
+import { MathInput, MathText } from "@/components/math-formula";
 
 type TestSummary = {
   id: string;
@@ -25,6 +25,15 @@ type QuestionRecord = {
 type EditorValues = {
   prompt: string;
   choices: string[];
+  answerIndex: number;
+  explanation: string;
+};
+type ImportedQuestion = {
+  section: "math" | "reading_writing";
+  module_number: 1 | 2;
+  topic: string;
+  prompt: string;
+  choices: [string, string, string, string];
   answerIndex: number;
   explanation: string;
 };
@@ -55,6 +64,11 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [importCandidates, setImportCandidates] = useState<ImportedQuestion[]>([]);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  const [editingImportIndex, setEditingImportIndex] = useState<number | null>(null);
   const supabase = useMemo(() => createClient(), []);
   const knownTestIds = useRef(new Set(tests.map((test) => test.id)));
   const selectedTest = tests.find((test) => test.id === selectedTestId) ?? null;
@@ -69,6 +83,10 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       resetEditor();
       setMessage("Yangi qoralama tanlandi. Endi shu testga savollarni kiriting.");
       setError("");
+      setImportCandidates([]);
+      setImportWarnings([]);
+      setEditingImportIndex(null);
+      setPdfFile(null);
       return;
     }
     if (!tests.length) {
@@ -124,6 +142,109 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         choiceIndex === index ? value : choice,
       ),
     }));
+  }
+
+  async function analyzePdf() {
+    if (!selectedTest || selectedTest.published || !pdfFile) return;
+    setPdfBusy(true);
+    setError("");
+    setMessage("");
+    setImportCandidates([]);
+    setImportWarnings([]);
+    setEditingImportIndex(null);
+    try {
+      const form = new FormData();
+      form.set("file", pdfFile);
+      form.set("testId", selectedTest.id);
+      const response = await fetch("/api/admin/import-pdf", { method: "POST", body: form });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "PDF tahlil qilinmadi.");
+      if (!Array.isArray(result.questions) || !result.questions.length) throw new Error("PDF’dan savollar ajratilmadi.");
+      setImportCandidates(result.questions as ImportedQuestion[]);
+      setImportWarnings(Array.isArray(result.warnings) ? result.warnings : []);
+      setMessage(`${result.questions.length} ta savol PDF’dan ajratildi. Saqlashdan oldin javoblarni tekshiring.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "PDF tahlil qilinmadi.");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
+  async function saveImportedQuestions() {
+    if (!selectedTest || selectedTest.published || !importCandidates.length) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const nextPosition = new Map<string, number>();
+    for (const question of questions) {
+      const key = `${question.section}:${question.module_number}`;
+      nextPosition.set(key, Math.max(nextPosition.get(key) ?? 0, question.position));
+    }
+    const rows = importCandidates.map((question) => {
+      const key = `${question.section}:${question.module_number}`;
+      const position = (nextPosition.get(key) ?? 0) + 1;
+      nextPosition.set(key, position);
+      return {
+        id: crypto.randomUUID(),
+        test_id: selectedTest.id,
+        section: question.section,
+        topic: question.topic || selectedTest.topic || "SAT",
+        prompt: question.prompt,
+        choices: question.choices,
+        module_number: selectedTest.kind === "topic" ? 1 : question.module_number,
+        position,
+      };
+    });
+    try {
+      const { error: insertError } = await supabase.from("questions").insert(rows);
+      if (insertError) throw insertError;
+      const { error: keyError } = await supabase.from("question_keys").upsert(
+        importCandidates.map((question, index) => ({
+          question_id: rows[index].id,
+          answer_index: question.answerIndex,
+          explanation: question.explanation,
+        })),
+        { onConflict: "question_id" },
+      );
+      if (keyError) {
+        await supabase.from("questions").delete().in("id", rows.map((row) => row.id));
+        throw keyError;
+      }
+      const { data, error: reloadError } = await supabase.from("questions")
+        .select("id,prompt,choices,section,module_number,position,topic")
+        .eq("test_id", selectedTest.id)
+        .order("section", { ascending: true })
+        .order("module_number", { ascending: true })
+        .order("position", { ascending: true });
+      if (reloadError) throw reloadError;
+      setQuestions(sortQuestions((data ?? []) as QuestionRecord[]));
+      setImportCandidates([]);
+      setImportWarnings([]);
+      setEditingImportIndex(null);
+      setPdfFile(null);
+      setMessage(`${rows.length} ta savol va javob kaliti testga saqlandi.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "PDF savollari bazaga saqlanmadi.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteSelectedTest() {
+    if (!selectedTest) return;
+    const confirmed = window.confirm(`“${selectedTest.title}” testini butunlay o‘chirasizmi? O‘quvchi urinishlari mavjud bo‘lsa, natijalarni saqlash uchun o‘chirish bloklanadi.`);
+    if (!confirmed) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const { error: deleteError } = await supabase.rpc("delete_test", { p_test_id: selectedTest.id });
+    if (deleteError) {
+      setError(deleteError.message);
+      setSaving(false);
+      return;
+    }
+    setMessage("Test va unga tegishli savollar o‘chirildi.");
+    window.location.reload();
   }
 
   async function saveQuestion(event: React.FormEvent<HTMLFormElement>) {
@@ -351,6 +472,10 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
           resetEditor();
           setMessage("");
           setError("");
+          setImportCandidates([]);
+          setImportWarnings([]);
+          setEditingImportIndex(null);
+          setPdfFile(null);
         }}
         disabled={!tests.length}
       >
@@ -372,6 +497,76 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
           {selectedTest.published ? (
             <p className="notice">E’lon qilingan test savollari bu panelda tahrirlanmaydi.</p>
           ) : (
+            <>
+            <section className="pdf-import-panel" aria-labelledby="pdf-import-title">
+              <div className="row">
+                <div><h3 id="pdf-import-title">PDF’dan savollarni import qilish</h3><p>PDF yuklang: AI savollar, variantlar, javob kaliti va izohni ajratadi. Tekshirganingizdan keyin testga saqlang.</p></div>
+                <span className="tag">AI · PDF</span>
+              </div>
+              <div className="pdf-import-controls">
+                <input
+                  className="field"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  aria-label="Savollar PDF fayli"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setPdfFile(file);
+                    setImportCandidates([]);
+                    setImportWarnings([]);
+                    if (file && file.size > 3.5 * 1024 * 1024) {
+                      setPdfFile(null);
+                      setError("PDF 3.5 MB dan kichik bo‘lishi kerak.");
+                    } else {
+                      setError("");
+                    }
+                  }}
+                />
+                <button type="button" className="btn secondary" disabled={!pdfFile || pdfBusy} onClick={() => void analyzePdf()}>
+                  {pdfBusy ? "PDF tahlil qilinmoqda…" : "PDF’ni AI bilan o‘qish"}
+                </button>
+              </div>
+              <p className="math-input-help">Matnli va skanerlangan PDF ishlaydi. Fayl hajmi 3.5 MB gacha, 100 tagacha savol. AI javoblarini bazaga saqlashdan avval ko‘rib chiqing.</p>
+              {importCandidates.length > 0 && (
+                <div className="pdf-import-preview">
+                  <div className="row"><h4>Tekshirish uchun ajratilgan savollar ({importCandidates.length})</h4><button type="button" className="btn secondary" onClick={() => setImportCandidates([])}>Bekor qilish</button></div>
+                  {importWarnings.length > 0 && <div className="notice"><strong>AI ogohlantirishi:</strong> {importWarnings.join("; ")}</div>}
+                  <ol>
+                    {importCandidates.map((candidate, index) => (
+                      <li key={`${candidate.section}-${candidate.module_number}-${index}`}>
+                        <div className="row"><strong>{candidate.section === "math" ? "Math" : "Reading and Writing"} · Module {candidate.module_number} · Javob {letters[candidate.answerIndex]}</strong><div className="row"><button type="button" className="btn secondary" onClick={() => setEditingImportIndex(index)}>Tahrirlash</button><button type="button" className="btn admin-danger" onClick={() => { setImportCandidates((items) => items.filter((_, itemIndex) => itemIndex !== index)); setEditingImportIndex(null); }}>Olib tashlash</button></div></div>
+                        <div className="pdf-preview-prompt"><MathText value={candidate.prompt} /></div>
+                        <ol className="pdf-preview-choice-list" type="A">{candidate.choices.map((choice, choiceIndex) => <li key={choiceIndex} className={choiceIndex === candidate.answerIndex ? "correct" : ""}><MathText value={choice} /></li>)}</ol>
+                        <p className="pdf-preview-explanation"><strong>AI izohi:</strong> <MathText value={candidate.explanation || "Izoh kiritilmagan."} /></p>
+                      </li>
+                    ))}
+                  </ol>
+                  <button type="button" className="btn primary" disabled={saving || !importCandidates.length} onClick={() => void saveImportedQuestions()}>
+                    {saving ? "Bazaga saqlanmoqda…" : `${importCandidates.length} ta savolni bazaga saqlash`}
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {editingImportIndex !== null && importCandidates[editingImportIndex] && (() => {
+              const candidate = importCandidates[editingImportIndex];
+              const updateCandidate = (changes: Partial<ImportedQuestion>) => setImportCandidates((items) => items.map((item, itemIndex) => itemIndex === editingImportIndex ? { ...item, ...changes } : item));
+              return <div className="math-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingImportIndex(null); }}>
+                <section className="math-editor-dialog pdf-candidate-editor" role="dialog" aria-modal="true" aria-labelledby="pdf-candidate-title">
+                  <div className="row"><div><h3 id="pdf-candidate-title">PDF savolini tekshirish</h3><p>AI ajratgan matn va matematik ifodalarni tahrirlab saqlang.</p></div><button type="button" className="math-editor-close" aria-label="Yopish" onClick={() => setEditingImportIndex(null)}>×</button></div>
+                  {selectedTest.kind === "mock" && <div className="cards">
+                    <div><label htmlFor="pdf-edit-section">Bo‘lim</label><select id="pdf-edit-section" className="field" value={candidate.section} onChange={(event) => updateCandidate({ section: event.target.value as ImportedQuestion["section"] })}><option value="reading_writing">Reading and Writing</option><option value="math">Math</option></select></div>
+                    <div><label htmlFor="pdf-edit-module">Modul</label><select id="pdf-edit-module" className="field" value={candidate.module_number} onChange={(event) => updateCandidate({ module_number: Number(event.target.value) as 1 | 2 })}><option value={1}>Module 1</option><option value={2}>Module 2</option></select></div>
+                  </div>}
+                  <MathInput id="pdf-edit-prompt" label="Savol matni" multiline rows={4} value={candidate.prompt} onChange={(prompt) => updateCandidate({ prompt })} />
+                  <div className="cards">{candidate.choices.map((choice, choiceIndex) => <MathInput key={choiceIndex} id={`pdf-edit-choice-${choiceIndex}`} label={`Javob ${letters[choiceIndex]}`} value={choice} onChange={(next) => updateCandidate({ choices: candidate.choices.map((option, index) => index === choiceIndex ? next : option) as ImportedQuestion["choices"] })} />)}</div>
+                  <label htmlFor="pdf-edit-answer">To‘g‘ri javob</label><select id="pdf-edit-answer" className="field" value={candidate.answerIndex} onChange={(event) => updateCandidate({ answerIndex: Number(event.target.value) })}>{letters.map((letter, index) => <option key={letter} value={index}>{letter}</option>)}</select>
+                  <MathInput id="pdf-edit-explanation" label="AI yechim izohi" multiline rows={4} value={candidate.explanation} onChange={(explanation) => updateCandidate({ explanation })} />
+                  <div className="math-editor-actions"><button type="button" className="btn primary" onClick={() => setEditingImportIndex(null)}>O‘zgarishlarni saqlash</button></div>
+                </section>
+              </div>;
+            })()}
+
             <form id="question-editor" onSubmit={saveQuestion}>
               <div className="row">
                 <h3>{editingQuestionId ? "Savolni tahrirlash" : "Yangi savol"}</h3>
@@ -491,6 +686,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                 {saving ? "Saqlanmoqda…" : editingQuestionId ? "O‘zgarishlarni saqlash" : "Savolni saqlash"}
               </button>
             </form>
+            </>
           )}
 
           {selectedTest.published && error && <p className="error" role="alert">{error}</p>}
@@ -499,11 +695,16 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
           <hr className="divider" />
           <div className="row">
             <h3>Savollar ({questions.length})</h3>
-            {selectedTest.published ? null : (
+            <div className="row admin-test-actions">
+              <button type="button" className="btn admin-danger" disabled={saving} onClick={() => void deleteSelectedTest()}>
+                {saving ? "Ishlanmoqda…" : "Testni o‘chirish"}
+              </button>
+              {selectedTest.published ? null : (
               <button className="btn primary" type="button" onClick={publishTest} disabled={saving || loading}>
                 {saving ? "Tekshirilmoqda…" : "Testni e’lon qilish"}
               </button>
-            )}
+              )}
+            </div>
           </div>
 
           {loading ? (
