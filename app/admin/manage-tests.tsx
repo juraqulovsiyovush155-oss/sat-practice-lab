@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { PDFDocument } from "pdf-lib";
 import { createClient } from "@/lib/supabase/client";
 import { MathInput, MathText } from "@/components/math-formula";
 
@@ -45,12 +46,73 @@ const emptyEditor: EditorValues = {
   explanation: "",
 };
 const letters = ["A", "B", "C", "D"];
+const VISION_CHUNK_PAGES = 4;
+const VISION_CHUNK_STEP = 3;
+const VISION_CHUNK_BYTES = 450_000;
+const MAX_VISION_PAGES = 48;
+const VISION_CONCURRENCY = 3;
 const sortQuestions = (questions: QuestionRecord[]) => [...questions].sort((left, right) => {
   const sectionOrder = (section: QuestionRecord["section"]) => section === "reading_writing" ? 0 : 1;
   return sectionOrder(left.section) - sectionOrder(right.section)
     || left.module_number - right.module_number
     || left.position - right.position;
 });
+
+type PdfImportResponse = {
+  error?: string;
+  needsVision?: boolean;
+  pageCount?: number;
+  questions?: ImportedQuestion[];
+  warnings?: string[];
+};
+
+async function readPdfImportResponse(response: Response): Promise<PdfImportResponse> {
+  const body = await response.text();
+  let result: PdfImportResponse;
+  try {
+    result = body ? JSON.parse(body) as PdfImportResponse : {};
+  } catch {
+    if (response.status === 413) throw new Error("PDF server limitidan katta. Faylni kichikroq yoki siqilgan PDF qilib yuklang.");
+    if (response.status === 504 || response.status === 502) throw new Error("PDF tahlili server vaqt chegarasiga yetdi. Skaner PDF’ni kichikroq bo‘laklarda qayta urinib ko‘ring.");
+    throw new Error(`PDF serveridan JSON javobi kelmadi (HTTP ${response.status}). Sahifani yangilab, qayta urinib ko‘ring.`);
+  }
+  if (!response.ok) throw new Error(result.error || `PDF tahlilida server xatosi (HTTP ${response.status}).`);
+  return result;
+}
+
+async function splitPdfForBrowser(file: File) {
+  const source = await PDFDocument.load(await file.arrayBuffer());
+  const pageCount = source.getPageCount();
+  if (!pageCount) throw new Error("PDF ichida sahifa topilmadi.");
+  if (pageCount > MAX_VISION_PAGES) throw new Error(`Skaner PDF ${pageCount} sahifa. Hozircha ${MAX_VISION_PAGES} sahifagacha bo‘lgan qismlarni yuklang.`);
+
+  const chunks: Array<{ firstPage: number; lastPage: number; file: File }> = [];
+  const appendRange = async (start: number, end: number): Promise<void> => {
+    const piece = await PDFDocument.create();
+    const pages = await piece.copyPages(source, Array.from({ length: end - start }, (_, index) => start + index));
+    pages.forEach((page) => piece.addPage(page));
+    const bytes = await piece.save();
+    if (bytes.byteLength > VISION_CHUNK_BYTES) {
+      if (end - start === 1) throw new Error(`PDF’ning ${start + 1}-sahifasi juda katta. Uni kichikroq yoki siqilgan PDF qilib yuklang.`);
+      const middle = start + Math.ceil((end - start) / 2);
+      await appendRange(start, middle);
+      await appendRange(Math.max(start, middle - 1), end);
+      return;
+    }
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    chunks.push({
+      firstPage: start + 1,
+      lastPage: end,
+      file: new File([buffer], `sat-pages-${start + 1}-${end}.pdf`, { type: "application/pdf" }),
+    });
+  };
+
+  for (let start = 0; start < pageCount; start += VISION_CHUNK_STEP) {
+    await appendRange(start, Math.min(start + VISION_CHUNK_PAGES, pageCount));
+  }
+  return chunks;
+}
 
 export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const [selectedTestId, setSelectedTestId] = useState(tests[0]?.id ?? "");
@@ -156,13 +218,51 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
       const form = new FormData();
       form.set("file", pdfFile);
       form.set("testId", selectedTest.id);
-      const response = await fetch("/api/admin/import-pdf", { method: "POST", body: form });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "PDF tahlil qilinmadi.");
-      if (!Array.isArray(result.questions) || !result.questions.length) throw new Error("PDF’dan savollar ajratilmadi.");
-      setImportCandidates(result.questions as ImportedQuestion[]);
-      setImportWarnings(Array.isArray(result.warnings) ? result.warnings : []);
-      setMessage(`${result.questions.length} ta savol PDF’dan ajratildi. Saqlashdan oldin javoblarni tekshiring.`);
+      const initialResponse = await fetch("/api/admin/import-pdf", { method: "POST", body: form });
+      const initialResult = await readPdfImportResponse(initialResponse);
+      let importedQuestions = initialResult.questions ?? [];
+      let warnings = initialResult.warnings ?? [];
+
+      if (initialResult.needsVision) {
+        setMessage("Skaner PDF sahifalari kichik bo‘laklarga ajratilmoqda…");
+        const chunks = await splitPdfForBrowser(pdfFile);
+        const chunkResults: PdfImportResponse[] = [];
+        for (let offset = 0; offset < chunks.length; offset += VISION_CONCURRENCY) {
+          const batch = chunks.slice(offset, offset + VISION_CONCURRENCY);
+          const results = await Promise.all(batch.map(async (chunk) => {
+            const chunkForm = new FormData();
+            chunkForm.set("file", chunk.file);
+            chunkForm.set("testId", selectedTest.id);
+            chunkForm.set("visionChunk", "true");
+            chunkForm.set("firstPage", String(chunk.firstPage));
+            chunkForm.set("lastPage", String(chunk.lastPage));
+            try {
+              const response = await fetch("/api/admin/import-pdf", { method: "POST", body: chunkForm });
+              return await readPdfImportResponse(response);
+            } catch (caught) {
+              const reason = caught instanceof Error ? caught.message : "server xatosi";
+              throw new Error(`${chunk.firstPage}–${chunk.lastPage}-sahifalarni tahlil qilib bo‘lmadi: ${reason}`);
+            }
+          }));
+          chunkResults.push(...results);
+          const completed = Math.min(offset + batch.length, chunks.length);
+          setMessage(`PDF sahifalari AI bilan tahlil qilinmoqda… ${completed}/${chunks.length} bo‘lak`);
+        }
+
+        const seen = new Set<string>();
+        importedQuestions = chunkResults.flatMap((result) => result.questions ?? []).filter((question) => {
+          const key = question.prompt.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 180);
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        warnings = [...new Set(chunkResults.flatMap((result) => result.warnings ?? []))];
+      }
+
+      if (!importedQuestions.length) throw new Error("PDF’dan javob variantlari bilan savollar ajratilmadi. Aniqroq PDF yoki javoblar kaliti bor faylni sinang.");
+      setImportCandidates(importedQuestions);
+      setImportWarnings(warnings);
+      setMessage(`${importedQuestions.length} ta savol PDF’dan ajratildi. Saqlashdan oldin javoblarni tekshiring.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "PDF tahlil qilinmadi.");
     } finally {
@@ -526,7 +626,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
                   {pdfBusy ? "PDF tahlil qilinmoqda…" : "PDF’ni AI bilan o‘qish"}
                 </button>
               </div>
-              <p className="math-input-help">Fayl hajmi 3.5 MB gacha va 160 sahifa. Skaner PDF ham AI tomonidan rasm sahifalaridan o‘qiladi (48 sahifagacha). Savol va javoblarni testga saqlashdan oldin tekshiring.</p>
+              <p className="math-input-help">Fayl hajmi 3.5 MB gacha. Skaner PDF 48 sahifagacha kichik bo‘laklarda tahlil qilinadi. Savol va javoblarni testga saqlashdan oldin tekshiring.</p>
               {importCandidates.length > 0 && (
                 <div className="pdf-import-preview">
                   <div className="row"><h4>Tekshirish uchun ajratilgan savollar ({importCandidates.length})</h4><button type="button" className="btn secondary" onClick={() => setImportCandidates([])}>Bekor qilish</button></div>
