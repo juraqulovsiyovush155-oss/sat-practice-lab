@@ -193,6 +193,7 @@ async function readQuestionRecords(client: ReturnType<typeof createClient>, test
 export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
   const [selectedTestId, setSelectedTestId] = useState(tests[0]?.id ?? "");
   const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [placementDrafts, setPlacementDrafts] = useState<Record<string, { module: number; position: number }>>({});
   const [choiceImagesAvailable, setChoiceImagesAvailable] = useState(true);
   const [draftSection, setDraftSection] = useState<"math" | "reading_writing">(tests[0]?.section ?? "math");
   const [draftModule, setDraftModule] = useState(1);
@@ -264,6 +265,7 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
         return;
       }
       setQuestions(sortQuestions((data ?? []) as QuestionRecord[]));
+      setPlacementDrafts({});
       setLoading(false);
     }
     void loadQuestions();
@@ -804,6 +806,116 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
     }
   }
 
+  function updatePlacementDraft(question: QuestionRecord, module: number, position: number) {
+    setPlacementDrafts((drafts) => ({
+      ...drafts,
+      [question.id]: { module, position },
+    }));
+  }
+
+  async function saveQuestionPlacement(question: QuestionRecord, targetModule: number, targetPosition: number) {
+    if (!selectedTest || selectedTest.kind !== "mock" || selectedTest.published) return;
+
+    const limit = requiredModuleQuestionCount(question.section);
+    const sourceGroup = questions
+      .filter((item) => item.section === question.section && item.module_number === question.module_number)
+      .sort((left, right) => left.position - right.position);
+    const sourceIndex = sourceGroup.findIndex((item) => item.id === question.id);
+    if (sourceIndex < 0) return;
+
+    const sourceWithoutQuestion = sourceGroup.filter((item) => item.id !== question.id);
+    const isSameModule = targetModule === question.module_number;
+    const targetGroup = isSameModule
+      ? sourceWithoutQuestion
+      : questions
+        .filter((item) => item.section === question.section && item.module_number === targetModule)
+        .sort((left, right) => left.position - right.position);
+
+    if (isSameModule) {
+      const reordered = [...sourceWithoutQuestion];
+      reordered.splice(Math.max(0, Math.min(targetPosition - 1, reordered.length)), 0, question);
+      await persistPlacementChanges([
+        ...reordered.map((item, index) => ({ item, module: targetModule, position: index + 1 })),
+      ]);
+      return;
+    }
+
+    if (targetGroup.length < limit) {
+      const reorderedSource = sourceWithoutQuestion;
+      const reorderedTarget = [...targetGroup];
+      reorderedTarget.splice(Math.max(0, Math.min(targetPosition - 1, reorderedTarget.length)), 0, question);
+      await persistPlacementChanges([
+        ...reorderedSource.map((item, index) => ({ item, module: question.module_number, position: index + 1 })),
+        ...reorderedTarget.map((item, index) => ({ item, module: targetModule, position: index + 1 })),
+      ]);
+      return;
+    }
+
+    if (targetGroup.length === limit) {
+      const displacedQuestion = targetGroup[targetPosition - 1];
+      if (!displacedQuestion) {
+        setError(`Tanlangan moduldagi savol raqami 1 dan ${limit} gacha bo‘lishi kerak.`);
+        return;
+      }
+      const swappedSource = [...sourceGroup];
+      swappedSource[sourceIndex] = displacedQuestion;
+      const swappedTarget = [...targetGroup];
+      swappedTarget[targetPosition - 1] = question;
+      await persistPlacementChanges([
+        ...swappedSource.map((item, index) => ({ item, module: question.module_number, position: index + 1 })),
+        ...swappedTarget.map((item, index) => ({ item, module: targetModule, position: index + 1 })),
+      ]);
+      return;
+    }
+
+    setError(`Module ${targetModule} da ${targetGroup.length} ta savol bor. Avval uni ${limit} tadan oshirmay tartiblang.`);
+  }
+
+  async function persistPlacementChanges(changes: { item: QuestionRecord; module: number; position: number }[]) {
+    if (!selectedTest) return;
+    const changed = changes.filter(({ item, module, position }) => item.module_number !== module || item.position !== position);
+    if (!changed.length) {
+      setPlacementDrafts((drafts) => {
+        const next = { ...drafts };
+        for (const { item } of changes) delete next[item.id];
+        return next;
+      });
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      for (const { item, module, position } of changed) {
+        const { error: updateError } = await supabase
+          .from("questions")
+          .update({ module_number: module, position })
+          .eq("id", item.id)
+          .eq("test_id", selectedTest.id);
+        if (updateError) throw updateError;
+      }
+
+      setQuestions((current) => sortQuestions(current.map((item) => {
+        const change = changes.find((entry) => entry.item.id === item.id);
+        return change ? { ...item, module_number: change.module, position: change.position } : item;
+      })));
+      setPlacementDrafts((drafts) => {
+        const next = { ...drafts };
+        for (const { item } of changes) delete next[item.id];
+        return next;
+      });
+      setMessage("Savol moduli va tartib raqami yangilandi.");
+    } catch (caught) {
+      const result = await readQuestionRecords(supabase, selectedTest.id);
+      if (!result.error) setQuestions(sortQuestions((result.data ?? []) as QuestionRecord[]));
+      setPlacementDrafts({});
+      setError(caught instanceof Error ? `Joylashuv saqlanmadi: ${caught.message}` : "Joylashuv saqlanmadi. Qayta urinib ko‘ring.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function publishTest() {
     if (!selectedTest || selectedTest.published) return;
     setError("");
@@ -1163,24 +1275,73 @@ export default function AdminManageTests({ tests }: { tests: TestSummary[] }) {
               {questions.map((question, index) => {
                 const previous = questions[index - 1];
                 const startsModule = !previous || previous.section !== question.section || previous.module_number !== question.module_number;
+                const moduleLimit = requiredModuleQuestionCount(question.section);
+                const moduleCount = questions.filter((item) => item.section === question.section && item.module_number === question.module_number).length;
+                const placement = placementDrafts[question.id] ?? { module: question.module_number, position: question.position };
+                const targetGroup = questions.filter((item) => item.section === question.section && item.module_number === placement.module && item.id !== question.id);
+                const maxPosition = placement.module === question.module_number
+                  ? Math.max(1, targetGroup.length + 1)
+                  : targetGroup.length < moduleLimit
+                    ? targetGroup.length + 1
+                    : Math.min(moduleLimit, targetGroup.length);
+                const validPosition = Math.max(1, Math.min(placement.position, maxPosition));
+                const canSavePlacement = placement.module === question.module_number
+                  ? validPosition !== question.position
+                  : targetGroup.length <= moduleLimit;
                 return (
                   <Fragment key={question.id}>
-                    {startsModule && <li className="admin-module-heading">{question.section === "reading_writing" ? "Reading and Writing" : "Math"} · Module {question.module_number}</li>}
+                    {startsModule && <li className="admin-module-heading">
+                      <span>{question.section === "reading_writing" ? "Reading and Writing" : "Math"} · Module {question.module_number}</span>
+                      <span>{moduleCount}/{moduleLimit} savol · {question.section === "math" ? "35" : "32"} daqiqa</span>
+                    </li>}
                     <li>
-                      <div className="admin-question-copy">
-                        <strong>{question.position}.</strong>
-                        <span>{question.prompt}</span>
-                      </div>
-                      {!selectedTest.published && (
-                        <div className="admin-question-actions">
-                          <button type="button" className="btn secondary" onClick={() => void editQuestion(question)}>
-                            Tahrirlash
-                          </button>
-                          <button type="button" className="btn admin-danger" onClick={() => void deleteQuestion(question)}>
-                            O‘chirish
-                          </button>
+                      <div className="admin-question-item">
+                        <div className="admin-question-row">
+                          <div className="admin-question-copy">
+                            <strong>{question.position}.</strong>
+                            <span>{question.prompt}</span>
+                          </div>
+                          {!selectedTest.published && (
+                            <div className="admin-question-actions">
+                              <button type="button" className="btn secondary" onClick={() => void editQuestion(question)}>
+                                Tahrirlash
+                              </button>
+                              <button type="button" className="btn admin-danger" onClick={() => void deleteQuestion(question)}>
+                                O‘chirish
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                        {!selectedTest.published && selectedTest.kind === "mock" && (
+                          <div className="admin-placement-controls">
+                            <label>
+                              Modulga qo‘shish
+                              <select className="field" value={placement.module} disabled={saving} onChange={(event) => {
+                                const nextModule = Number(event.target.value);
+                                const nextTargetCount = questions.filter((item) => item.section === question.section && item.module_number === nextModule && item.id !== question.id).length;
+                                const nextPosition = nextModule === question.module_number
+                                  ? question.position
+                                  : nextTargetCount < moduleLimit
+                                    ? nextTargetCount + 1
+                                    : Math.min(question.position, moduleLimit);
+                                updatePlacementDraft(question, nextModule, nextPosition);
+                              }}>
+                                <option value={1}>Module 1 · {questions.filter((item) => item.section === question.section && item.module_number === 1).length}/{moduleLimit}</option>
+                                <option value={2}>Module 2 · {questions.filter((item) => item.section === question.section && item.module_number === 2).length}/{moduleLimit}</option>
+                              </select>
+                            </label>
+                            <label>
+                              Moduldagi savol raqami
+                              <select className="field" value={validPosition} disabled={saving} onChange={(event) => updatePlacementDraft(question, placement.module, Number(event.target.value))}>
+                                {Array.from({ length: maxPosition }, (_, positionIndex) => positionIndex + 1).map((position) => <option key={position} value={position}>{position}-savol</option>)}
+                              </select>
+                            </label>
+                            <button type="button" className="btn secondary" disabled={saving || !canSavePlacement} onClick={() => void saveQuestionPlacement(question, placement.module, validPosition)}>
+                              {saving ? "Saqlanmoqda…" : "Modul va raqamni saqlash"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </li>
                   </Fragment>
                 );

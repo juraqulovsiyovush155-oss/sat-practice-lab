@@ -26,8 +26,17 @@
 .admin-question-copy span{white-space:pre-wrap;overflow-wrap:anywhere}
 .admin-question-actions{display:flex;gap:8px;flex:0 0 auto}
 .admin-question-actions .btn{padding:7px 10px;font-size:13px}
+.admin-question-item{width:100%;min-width:0}
+.admin-question-row{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.admin-placement-controls{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.admin-placement-controls label{display:grid;gap:4px;min-width:180px;color:var(--muted);font-size:11px}
+.admin-placement-controls .field{min-width:180px;margin:0;padding:8px 10px;font-size:13px}
+.admin-placement-controls .btn{min-height:38px;padding:8px 12px;font-size:12px}
 .admin-danger{background:#fff0ef;color:#a52620;border:1px solid #f2c8c4}
+.admin-question-list li.admin-module-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.admin-module-heading span+span{font-size:11px;font-weight:700;opacity:.8}
 @media(max-width:700px){.admin-question-list li{display:block}.admin-question-actions{margin-top:12px}}
+@media(max-width:700px){.admin-question-row{display:block}.admin-placement-controls{display:grid;grid-template-columns:1fr 1fr}.admin-placement-controls label,.admin-placement-controls .field{min-width:0;width:100%}.admin-placement-controls .btn{grid-column:1/-1;width:100%}}
 
 /* Siyovush SAT + GRE program site */
 .site-header{position:sticky;top:0;z-index:20;max-width:1440px;margin:0 auto;height:78px;padding:0 clamp(22px,5vw,74px);display:flex;align-items:center;justify-content:space-between;gap:24px;background:rgba(255,255,255,.96);border-bottom:1px solid #e5ebe3;backdrop-filter:blur(14px)}
